@@ -2,11 +2,12 @@ import { useState, type DragEvent } from "react";
 
 import { formatRelativeTime, isHttpUrl, type DelayTone } from "../api/format";
 import { useStream } from "../api/stream";
-import { useSupportsCapability } from "../app/capabilities";
+import { useExtension, useSupportsCapability } from "../app/capabilities";
 import { navigate, useApi, useIsMobile, useNow } from "../app/context";
 import { showError } from "../app/errorStore";
 import { useStreamingAction } from "../app/hooks";
 import { useI18n, type Translate } from "../app/i18n";
+import { ForceRelayRow } from "../components/ForceRelayRow";
 import { Icon } from "../components/Icon";
 import { StreamStates } from "../components/StreamBanner";
 import {
@@ -51,6 +52,7 @@ export function TailscaleEndpointView(props: { tag: string }) {
   const [authQROpen, setAuthQROpen] = useState(false);
   const ssh = useTailscaleSSH(props.tag);
   const taildropSupported = useSupportsCapability("taildrop");
+  const forceRelaySupported = useExtension("tailscale_force_relay");
   const taildrop = useTaildropSend(props.tag);
   const taildropSessions = useTaildropSendSessions(api, props.tag);
   const taildropSending = taildropSessions.length > 0;
@@ -158,6 +160,14 @@ export function TailscaleEndpointView(props: { tag: string }) {
             onOpenAuthQR={() => setAuthQROpen(true)}
             onOpenTaildrop={() => navigate(taildropPath(props.tag))}
           />
+          {forceRelaySupported && (
+            <div>
+              <div className="list-section-title">{t("Connectivity")}</div>
+              <div className="settings-list">
+                <ForceRelayRow />
+              </div>
+            </div>
+          )}
           {running && allPeers.length > 0 && (
             <PeerSections
               endpoint={endpoint}

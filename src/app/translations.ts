@@ -572,6 +572,7 @@ export const TRANSLATIONS = {
   "DNS cache": { "zh-Hans": "DNS 缓存" },
   "Tailscale force relay": { "zh-Hans": "Tailscale 强制中继" },
   "Upstream exchanges": { "zh-Hans": "上游交互" },
+  "Connectivity": { "zh-Hans": "连通性" },
 } as const satisfies Record<string, Record<TranslatedLanguage, string | PluralForms>>;
 
 export type MessageKey = keyof typeof TRANSLATIONS;

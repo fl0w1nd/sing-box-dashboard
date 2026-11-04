@@ -1,25 +1,24 @@
 name: Deploy
 
+# Builds the dashboard and publishes dist/ to the gh-pages branch, which the
+# sing-box API service can download:
+#   "dashboard": { "download_url": "https://github.com/fl0w1nd/sing-box-dashboard/archive/refs/heads/gh-pages.zip" }
+# GitHub Pages can serve the same branch if it is enabled for the repository.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
 concurrency:
-  group: github-pages
+  group: gh-pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  publish:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,23 +31,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm generate
       - run: pnpm build
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-      - uses: actions/deploy-pages@v4
-        id: deployment
       - uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-
-  publish-branch:
-    needs: deploy
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
         with:
           name: dist
           path: dist

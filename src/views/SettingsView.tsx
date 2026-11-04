@@ -10,7 +10,6 @@ import {
   type ServersState,
 } from "../api/config";
 import { formatDateTime } from "../api/format";
-import { useStream } from "../api/stream";
 import { useExtension, useExtensions } from "../app/capabilities";
 import { navigate, useApi } from "../app/context";
 import {
@@ -18,8 +17,9 @@ import {
   saveDisableDeprecatedWarnings,
 } from "../app/deprecatedWarnings";
 import { showError } from "../app/errorStore";
-import { usePendingValue, useUnaryOnce } from "../app/hooks";
+import { useUnaryOnce } from "../app/hooks";
 import { LanguageSelect, useI18n, type MessageKey } from "../app/i18n";
+import { ForceRelayRow } from "../components/ForceRelayRow";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { ReachabilityIndicator, useServerReachability } from "../components/ReachabilityIndicator";
@@ -184,36 +184,6 @@ export function SettingsView() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-export function ForceRelayRow() {
-  const api = useApi();
-  const { t } = useI18n();
-  const status = useStream(api.extended.forceRelay);
-  const [enabled, setPending] = usePendingValue(status.data.enabled);
-  return (
-    <div className="settings-row">
-      <Icon name="relay" size={16} />
-      <div className={styles.rowText}>
-        <span className="settings-row-label">{t("Force DERP relay")}</span>
-        <span className="hint">
-          {t("Reach every peer only through DERP relays, for all Tailscale endpoints. Kept across restarts.")}
-        </span>
-      </div>
-      <Switch
-        label={t("Force DERP relay")}
-        value={enabled}
-        disabled={!status.data.loaded}
-        onChange={(value) => {
-          setPending(value);
-          api.extended.setForceRelay(value).catch((error: unknown) => {
-            setPending(null);
-            showError(error);
-          });
-        }}
-      />
     </div>
   );
 }

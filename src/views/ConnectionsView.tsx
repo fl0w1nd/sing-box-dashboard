@@ -15,6 +15,7 @@ import {
 import { useApi, useIsMobile } from "../app/context";
 import { showError } from "../app/errorStore";
 import { useI18n, type MessageKey } from "../app/i18n";
+import { Chips } from "../components/Board";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamStates } from "../components/StreamBanner";
@@ -48,6 +49,19 @@ export function ConnectionsView() {
   const [sortMode, setSortMode] = useState<ConnectionSortMode>(loadConnectionSortMode);
   const [search, setSearch] = useState("");
   const [detailId, setDetailId] = useState<string | null>(null);
+
+  const counts = useMemo(() => {
+    let active = 0;
+    let closed = 0;
+    for (const row of connections.data.rows.values()) {
+      if (row.closedAt === null) {
+        active += 1;
+      } else {
+        closed += 1;
+      }
+    }
+    return { active, closed, all: active + closed };
+  }, [connections.data.rows]);
 
   const rows = useMemo(() => {
     const result: ConnectionRow[] = [];
@@ -118,20 +132,6 @@ export function ConnectionsView() {
         title={t("Connections")}
         actions={
           <OthersMenu>
-            <MenuLabel>{t("State")}</MenuLabel>
-            {STATE_OPTIONS.map((option) => (
-              <MenuItem
-                key={option.value}
-                checked={stateFilter === option.value}
-                onSelect={() => {
-                  setStateFilter(option.value);
-                  saveConnectionStateFilter(option.value);
-                }}
-              >
-                {t(option.label)}
-              </MenuItem>
-            ))}
-            <div className="menu-divider" />
             <MenuLabel>{t("Sort By")}</MenuLabel>
             {SORT_OPTIONS.map((option) => (
               <MenuItem
@@ -158,8 +158,22 @@ export function ConnectionsView() {
           </OthersMenu>
         }
       />
-      <div className="field">
-        <SearchInput value={search} onChange={setSearch} />
+      <div className={styles.toolbar}>
+        <div className={styles.search}>
+          <SearchInput value={search} onChange={setSearch} />
+        </div>
+        <Chips
+          options={STATE_OPTIONS.map((option) => ({
+            value: option.value,
+            label: t(option.label),
+            count: counts[option.value],
+          }))}
+          value={stateFilter}
+          onChange={(value) => {
+            setStateFilter(value);
+            saveConnectionStateFilter(value);
+          }}
+        />
       </div>
       <StreamStates
         snapshot={connections}
@@ -173,9 +187,13 @@ export function ConnectionsView() {
           {t("Connection tracking requires the Clash API to be configured in the running instance.")}
         </div>
       )}
-      {rows.slice(0, 500).map((row) => (
-        <ConnectionRowView key={row.connection.id} row={row} onOpen={setDetailId} />
-      ))}
+      {rows.length > 0 && (
+        <div className={styles.list}>
+          {rows.slice(0, 500).map((row) => (
+            <ConnectionRowView key={row.connection.id} row={row} onOpen={setDetailId} />
+          ))}
+        </div>
+      )}
       {rows.length > 500 && (
         <div className="hint" style={{ textAlign: "center", padding: 8 }}>
           {t("Showing first {limit} of {count} connections", { limit: 500, count: rows.length })}

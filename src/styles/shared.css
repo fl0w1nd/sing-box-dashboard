@@ -920,6 +920,33 @@ button.select:disabled {
   flex: 1;
 }
 
+.settings-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.settings-list {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+
+.settings-list > .settings-row {
+  padding: var(--space-14) var(--space-16);
+  border-bottom: 0;
+}
+
+.settings-list > .settings-row + .settings-row {
+  border-top: 1px solid var(--border);
+}
+
+.settings-list > .settings-row > .icon:first-child {
+  color: var(--text-secondary);
+}
+
 .settings-row > .icon:first-child {
   color: var(--text-faint);
 }
