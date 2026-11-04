@@ -1,24 +1,192 @@
-import { ICON_PATHS, type IconName } from "./iconPaths";
+import {
+  Activity,
+  ArrowDown,
+  ArrowDownUp,
+  ArrowLeft,
+  ArrowLeftRight,
+  ArrowUp,
+  Box,
+  Boxes,
+  Bug,
+  Cable,
+  CalendarClock,
+  ChartColumn,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ChevronsUpDown,
+  ChevronUp,
+  CircleDot,
+  Clock,
+  CloudOff,
+  Code,
+  Copy,
+  Cpu,
+  DatabaseZap,
+  Ellipsis,
+  EllipsisVertical,
+  Eraser,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  FileText,
+  FileUp,
+  Gauge,
+  Globe,
+  GripVertical,
+  HardDriveDownload,
+  Heart,
+  Info,
+  Languages,
+  Layers,
+  LayoutGrid,
+  ListFilter,
+  LogOut,
+  MemoryStick,
+  Menu,
+  Monitor,
+  Moon,
+  Network,
+  Package,
+  Palette,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Power,
+  QrCode,
+  RadioTower,
+  Redo2,
+  RefreshCw,
+  Route,
+  Router,
+  Save,
+  ScrollText,
+  Search,
+  Settings2,
+  Share2,
+  ShieldOff,
+  SlidersHorizontal,
+  Square,
+  SquareTerminal,
+  Sun,
+  SunMoon,
+  Trash2,
+  TriangleAlert,
+  Undo2,
+  Unplug,
+  Usb,
+  Waypoints,
+  Workflow,
+  X,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 
-export type { IconName };
+// Names follow the upstream dashboard (Material Symbols names) so that views
+// shared with upstream keep working; the artwork is Lucide (ISC).
+const ICONS = {
+  dashboard: LayoutGrid,
+  text_snippet: ScrollText,
+  folder: Layers,
+  swap_vert: ArrowDownUp,
+  terminal: SquareTerminal,
+  settings: Settings2,
+  upload: ArrowUp,
+  upload_file: FileUp,
+  download: ArrowDown,
+  cable: Cable,
+  tune: SlidersHorizontal,
+  route: Route,
+  bug_report: Bug,
+  memory: MemoryStick,
+  bolt: Zap,
+  speed: Gauge,
+  unfold_more: ChevronsUpDown,
+  sync: RefreshCw,
+  schedule: Clock,
+  filter_list: ListFilter,
+  save: Save,
+  share: Share2,
+  delete: Trash2,
+  content_copy: Copy,
+  pause: Pause,
+  play_arrow: Play,
+  network_check: Activity,
+  swap_horiz: ArrowLeftRight,
+  hub: Network,
+  open_in_new: ExternalLink,
+  qr_code: QrCode,
+  stop: Square,
+  logout: LogOut,
+  warning_amber: TriangleAlert,
+  power_settings_new: Power,
+  computer: Monitor,
+  router: Router,
+  edit: Pencil,
+  more_horiz: Ellipsis,
+  cloud_off: CloudOff,
+  search: Search,
+  close: X,
+  check: Check,
+  add: Plus,
+  more_vert: EllipsisVertical,
+  expand_more: ChevronDown,
+  expand_less: ChevronUp,
+  keyboard_arrow_right: ChevronRight,
+  arrow_back: ArrowLeft,
+  drag_handle: GripVertical,
+  menu: Menu,
+  dns: Globe,
+  usb: Usb,
+  usb_off: Unplug,
+  description: FileText,
+  code: Code,
+  brightness_auto: SunMoon,
+  light_mode: Sun,
+  dark_mode: Moon,
+  language: Languages,
+  palette: Palette,
+  visibility: Eye,
+  visibility_off: EyeOff,
+  favorite: Heart,
+  info: Info,
+  undo: Undo2,
+  redo: Redo2,
+  // Extended
+  provider: Package,
+  relay: RadioTower,
+  direct_off: ShieldOff,
+  eraser: Eraser,
+  waypoints: Waypoints,
+  cpu: Cpu,
+  workflow: Workflow,
+  box: Box,
+  boxes: Boxes,
+  dns_cache: DatabaseZap,
+  chart: ChartColumn,
+  expire: CalendarClock,
+  traffic_quota: HardDriveDownload,
+  node: CircleDot,
+} satisfies Record<string, LucideIcon>;
+
+export type IconName = keyof typeof ICONS;
 
 interface IconProps {
   name: IconName;
   size?: number;
+  strokeWidth?: number;
 }
 
-export function Icon({ name, size = 16 }: IconProps) {
+export function Icon({ name, size = 16, strokeWidth }: IconProps) {
+  const Component = ICONS[name];
   return (
-    <svg
+    <Component
       className="icon"
-      width={size}
-      height={size}
-      style={{ width: size, height: size, flexShrink: 0 }}
-      viewBox="0 0 24 24"
-      fill="currentColor"
+      size={size}
+      strokeWidth={strokeWidth ?? (size <= 14 ? 2 : 1.75)}
+      style={{ flexShrink: 0 }}
       aria-hidden="true"
-    >
-      <path d={ICON_PATHS[name]} />
-    </svg>
+    />
   );
 }

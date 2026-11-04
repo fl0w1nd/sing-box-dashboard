@@ -128,13 +128,35 @@ export function urlTestDelayTone(delay: number): DelayTone {
   if (delay <= 0) {
     return "neutral";
   }
-  if (delay < 800) {
+  if (delay < LATENCY_GOOD_MS) {
     return "good";
   }
-  if (delay < 1500) {
+  if (delay < LATENCY_MEDIUM_MS) {
     return "medium";
   }
   return "bad";
+}
+
+// URL test delays here are usually unified (a second request over the
+// established connection), so the bands are tighter than upstream's.
+export const LATENCY_GOOD_MS = 300;
+export const LATENCY_MEDIUM_MS = 800;
+
+// "🇯🇵 TYO 01" → { flag: "🇯🇵", rest: "TYO 01" }; provider prefixes such as
+// "airport/" are split off as well.
+export function splitNodeTag(tag: string): { prefix: string; flag: string; name: string } {
+  let rest = tag;
+  let prefix = "";
+  const slash = rest.indexOf("/");
+  if (slash > 0 && slash < rest.length - 1) {
+    prefix = rest.slice(0, slash);
+    rest = rest.slice(slash + 1);
+  }
+  const match = rest.match(/^\s*((?:\uD83C[\uDDE6-\uDDFF]){2})\s*/);
+  if (match) {
+    return { prefix, flag: match[1], name: rest.slice(match[0].length) };
+  }
+  return { prefix, flag: "", name: rest };
 }
 
 const PROXY_DISPLAY_TYPES: Record<string, string> = {

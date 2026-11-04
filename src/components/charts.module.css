@@ -1,0 +1,361 @@
+/* Traffic stems */
+
+.traffic {
+  position: relative;
+  width: 100%;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.plot {
+  position: absolute;
+  inset: 0 0 auto;
+  border-radius: var(--radius-sm);
+}
+
+.svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.baseline {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+.guide {
+  stroke: var(--ink-4);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+
+.stem-up,
+.stem-down {
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.stem-up {
+  stroke: var(--series-up);
+}
+
+.stem-down {
+  stroke: var(--series-down);
+}
+
+.dot-up {
+  fill: var(--series-up);
+}
+
+.dot-down {
+  fill: var(--series-down);
+}
+
+.dimmed {
+  opacity: 0.32;
+}
+
+.axis-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  fill: var(--text-faint);
+}
+
+.peak {
+  position: absolute;
+  padding: var(--space-px) var(--space-6);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--accent-strong);
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--accent-soft);
+  border-radius: var(--radius-xs);
+  transform: translateX(-50%);
+}
+
+.scale {
+  position: absolute;
+  inset-inline-start: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.scale-up {
+  top: 2px;
+}
+
+/* Gauge */
+
+.gauge {
+  position: relative;
+  margin: 0 auto;
+}
+
+.gauge svg {
+  overflow: visible;
+}
+
+.gauge-track {
+  fill: none;
+  stroke: var(--neutral-soft);
+  stroke-width: 10;
+  stroke-linecap: round;
+}
+
+.gauge-fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 10;
+  stroke-linecap: round;
+  transition: d 0.6s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.gauge-knob {
+  fill: var(--card);
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.gauge-tick {
+  stroke: var(--ink-4);
+  stroke-width: 1;
+}
+
+.gauge-tick-major {
+  stroke: var(--ink-3);
+}
+
+.gauge-tick-filled {
+  opacity: 0.55;
+  stroke: var(--accent);
+}
+
+.gauge-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  fill: var(--text-faint);
+}
+
+.gauge-center {
+  position: absolute;
+  inset: 0 0 8%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+/* Smooth line */
+
+.line {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+
+.line svg {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.line-stroke {
+  fill: none;
+  stroke: var(--series-down);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.line-area {
+  opacity: 0.5;
+  fill: var(--series-down-soft);
+}
+
+.line-knob {
+  fill: var(--card);
+  stroke: var(--series-down);
+  stroke-width: 2.5;
+}
+
+/* Latency scale */
+
+.scale-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+.scale-ticks {
+  display: flex;
+  gap: var(--space-2);
+  align-items: stretch;
+  justify-content: space-between;
+  height: 14px;
+}
+
+.scale-tick {
+  flex: 1;
+  max-width: 2px;
+  background: var(--ink-4);
+  border-radius: 1px;
+  opacity: 0.6;
+}
+
+.tick-good {
+  background: var(--good);
+  opacity: 1;
+}
+
+.tick-medium {
+  background: var(--medium);
+  opacity: 1;
+}
+
+.tick-bad {
+  background: var(--bad);
+  opacity: 1;
+}
+
+.tick-neutral {
+  background: var(--ink-3);
+  opacity: 1;
+}
+
+.scale-labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+}
+
+/* Node stems */
+
+.stems {
+  margin: 0 calc(var(--space-8) * -1);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.stems-track {
+  display: flex;
+  min-width: 100%;
+}
+
+.stem-column {
+  display: flex;
+  flex: 1 0 72px;
+  flex-direction: column;
+  align-items: center;
+  min-width: 72px;
+  max-width: 132px;
+  padding: 0 var(--space-4) var(--space-8);
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.stem-column:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.stem-static {
+  cursor: default;
+}
+
+.stem-plot {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.stem-line {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 1.5px;
+  background: var(--ink-4);
+  transform: translateX(-50%);
+  transition: height 0.5s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.stem-head {
+  position: absolute;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  transition: bottom 0.5s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.head-good {
+  background: var(--good);
+}
+
+.head-medium {
+  background: var(--medium);
+}
+
+.head-bad {
+  background: var(--card);
+  border: 2px solid var(--bad);
+}
+
+.head-none {
+  background: transparent;
+  border: 1.5px dashed var(--ink-3);
+}
+
+.stem-value {
+  position: absolute;
+  left: 50%;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  transition: bottom 0.5s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.stem-label {
+  display: -webkit-box;
+  max-width: 100%;
+  min-height: 32px;
+  margin-top: var(--space-8);
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  text-align: center;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+}
+
+.stem-selected {
+  color: var(--text);
+  background: var(--accent-wash);
+}
+
+.stem-selected .stem-line {
+  background: var(--accent);
+}
+
+.stem-selected .stem-label {
+  font-weight: var(--weight-medium);
+}
+
+.stem-selected .stem-plot {
+  border-bottom: 2px solid var(--accent);
+}

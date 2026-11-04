@@ -1,43 +1,46 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { formatBytes, formatMemoryBytes } from "../api/format";
+import {
+  formatBytes,
+  formatDurationMs,
+  formatMemoryBytes,
+  formatRelativeTime,
+  LATENCY_GOOD_MS,
+  LATENCY_MEDIUM_MS,
+  proxyDisplayType,
+  splitNodeTag,
+  urlTestDelayTone,
+} from "../api/format";
+import { STATUS_HISTORY_LENGTH } from "../api/daemon";
 import { useStream } from "../api/stream";
-import { useApi } from "../app/context";
-import { useLocalDesktopHost } from "../app/desktop";
-import type { DesktopHost } from "../app/desktop";
+import { useExtension } from "../app/capabilities";
+import { navigate, useApi, useNow } from "../app/context";
 import { showError } from "../app/errorStore";
 import { usePendingValue } from "../app/hooks";
 import { useI18n } from "../app/i18n";
+import { Board, Meter, Metric, Panel, PanelHead, Tabs } from "../components/Board";
 import {
-  DASHBOARD_CARDS,
-  groupCardRows,
-  isDashboardCardId,
-  loadDashboardCardsConfig,
-  moveCard,
-  orderedEnabledCards,
-  resetDashboardCardsConfig,
-  saveDashboardCardsConfig,
-  toggleCard,
-  type DashboardCardsConfig,
-} from "../app/dashboardCards";
+  LatencyScale,
+  NodeStems,
+  RadialGauge,
+  SmoothLine,
+  TrafficStems,
+  type StemNode,
+} from "../components/charts";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamBanner } from "../components/StreamBanner";
-import { AdaptiveSegmented, Button, Card, DataLine, Dialog, EmptyState, IconButton, Sparkline } from "../components/ui";
-import { ServiceStatus_Type } from "../gen/daemon/started_service_pb";
-import { ProfileCard, SystemProxyCard } from "./ProfileViews";
-import styles from "./OverviewView.module.css";
+import { Button, Dialog, EmptyState, Select, Spinner } from "../components/ui";
+import type { DNSQueryLogStats } from "../gen/daemon/extended_service_pb";
+import { ServiceStatus_Type, type Group } from "../gen/daemon/started_service_pb";
+import { loadStoredString, saveStoredString } from "../lib/storage";
 import { cx } from "../lib/cx";
+import styles from "./OverviewView.module.css";
 
 export function OverviewView() {
   const api = useApi();
   const { t } = useI18n();
-  const host = useLocalDesktopHost();
   const serviceStatus = useStream(api.serviceStatus);
-  const [cardsConfig, setCardsConfig] = useState<DashboardCardsConfig>(() =>
-    loadDashboardCardsConfig(host !== null),
-  );
-  const [managing, setManaging] = useState(false);
   const statusType = serviceStatus.data.status?.status;
   const started = statusType === ServiceStatus_Type.STARTED;
 
@@ -61,237 +64,687 @@ export function OverviewView() {
 
   return (
     <div className="page">
-      <PageHeader
-        title={t("Overview")}
-        actions={
-          started ? (
-            <IconButton
-              title={t("Dashboard Items")}
-              onClick={() => setManaging(true)}
-            >
-              <Icon name="tune" />
-            </IconButton>
-          ) : undefined
-        }
-      />
+      <PageHeader title={t("Overview")} actions={started ? <ModeSwitch /> : undefined} />
       <StreamBanner snapshot={serviceStatus} />
       {started ? (
-        <OverviewCards config={cardsConfig} host={host} />
-      ) : host !== null ? (
-        <div className={styles.cardGrid}>
-          {orderedEnabledCards(cardsConfig).includes("profile") && <ProfileCard host={host} />}
-        </div>
+        <OverviewBoard />
       ) : (
         stateLabel !== null && <EmptyState icon="dashboard">{stateLabel}</EmptyState>
-      )}
-      {managing && (
-        <CardManagementDialog
-          config={cardsConfig}
-          desktop={host !== null}
-          onChange={(next) => {
-            saveDashboardCardsConfig(next);
-            setCardsConfig(() => next);
-          }}
-          onClose={() => setManaging(false)}
-        />
       )}
     </div>
   );
 }
 
-function OverviewCards(props: { config: DashboardCardsConfig; host: DesktopHost | null }) {
+function ModeSwitch() {
+  const api = useApi();
+  const clashMode = useStream(api.clashMode);
+  const [currentMode, setPendingMode] = usePendingValue(clashMode.data.currentMode);
+  const modes = clashMode.data.modeList;
+  if (modes.length <= 1) {
+    return null;
+  }
+  return (
+    <div className="segmented" role="radiogroup">
+      {modes.map((mode) => (
+        <button
+          key={mode}
+          type="button"
+          role="radio"
+          aria-checked={mode === currentMode}
+          className={mode === currentMode ? "active" : ""}
+          onClick={() => {
+            if (mode === currentMode) {
+              return;
+            }
+            setPendingMode(mode);
+            api.setClashMode(mode).catch((error: unknown) => {
+              setPendingMode(null);
+              showError(error);
+            });
+          }}
+        >
+          {mode}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function OverviewBoard() {
+  const providers = useExtension("outbound_provider");
+  const dnsLog = useExtension("dns_query_log");
+  return (
+    <Board>
+      <TrafficPanel />
+      <RoutePanel />
+      <MemoryPanel />
+      <GoroutinesPanel />
+      <ConnectionsPanel />
+      <LatencyPanel />
+      {providers && <ProvidersSummaryPanel wide={!dnsLog} />}
+      {dnsLog && <DnsSummaryPanel wide={!providers} />}
+    </Board>
+  );
+}
+
+function rate(value: number): string {
+  return `${formatBytes(value)}/s`;
+}
+
+function splitUnit(text: string): [string, string] {
+  const index = text.lastIndexOf(" ");
+  return index > 0 ? [text.slice(0, index), text.slice(index + 1)] : [text, ""];
+}
+
+/* -------------------------------------------------------------- traffic */
+
+function TrafficPanel() {
   const api = useApi();
   const { t } = useI18n();
   const status = useStream(api.status);
-  const clashMode = useStream(api.clashMode);
-  const [currentMode, setPendingMode] = usePendingValue(clashMode.data.currentMode);
-
   const current = status.data.current;
-  const trafficAvailable = current?.trafficAvailable ?? false;
-  const modeList = clashMode.data.modeList;
+  const available = current?.trafficAvailable ?? false;
+  const [upValue, upUnit] = splitUnit(available ? rate(Number(current?.uplink ?? 0)) : "— B/s");
+  const [downValue, downUnit] = splitUnit(available ? rate(Number(current?.downlink ?? 0)) : "— B/s");
 
-  const isCardVisible = (card: string) => {
-    switch (card) {
-      case "systemProxy":
-      case "profile":
-        return props.host !== null;
-      case "clashMode":
-        return modeList.length > 1;
-      default:
-        return true;
+  return (
+    <Panel span={8}>
+      <PanelHead
+        icon="network_check"
+        title={t("Traffic")}
+        subtitle={t("Last {count} seconds", { count: STATUS_HISTORY_LENGTH })}
+        actions={<span className={cx("live-tag", status.phase !== "active" && "idle")}>{t("Live")} · 1s</span>}
+      />
+      <div className={styles.trafficBody}>
+        <div className={styles.trafficStats}>
+          <div>
+            <div className="metric-label">
+              <span className="swatch up" />
+              {t("Upload")}
+            </div>
+            <Metric value={upValue} unit={upUnit} />
+            <div className="metric-foot">
+              {t("Total")} <strong>{available ? formatBytes(Number(current?.uplinkTotal ?? 0)) : "—"}</strong>
+            </div>
+          </div>
+          <div className={styles.trafficDivider} />
+          <div>
+            <div className="metric-label">
+              <span className="swatch down" />
+              {t("Download")}
+            </div>
+            <Metric value={downValue} unit={downUnit} />
+            <div className="metric-foot">
+              {t("Total")} <strong>{available ? formatBytes(Number(current?.downlinkTotal ?? 0)) : "—"}</strong>
+            </div>
+          </div>
+        </div>
+        <div className={styles.trafficChart}>
+          {available ? (
+            <TrafficStems
+              up={status.data.uplinkHistory}
+              down={status.data.downlinkHistory}
+              capacity={STATUS_HISTORY_LENGTH}
+              format={rate}
+              labels={{ up: t("Upload"), down: t("Download"), now: t("now"), peak: t("peak") }}
+            />
+          ) : (
+            <EmptyState icon="network_check">{t("Traffic statistics are not available")}</EmptyState>
+          )}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+/* ---------------------------------------------------------------- route */
+
+const ROUTE_GROUP_KEY = "overview-route-group";
+
+interface RouteStep {
+  tag: string;
+  detail: string;
+  group: boolean;
+  delay: number;
+}
+
+// The group an overview panel starts from when the user has not picked one:
+// the first selector with a real choice, which is usually the main proxy
+// group, then any group with members.
+export function primaryGroup(groups: Group[]): Group | undefined {
+  return (
+    groups.find((group) => group.selectable && group.items.length > 1) ??
+    groups.find((group) => group.items.length > 1) ??
+    groups[0]
+  );
+}
+
+function buildChain(groups: Group[], rootTag: string, nodes: (count: number) => string): RouteStep[] {
+  const byTag = new Map(groups.map((group) => [group.tag, group]));
+  const chain: RouteStep[] = [];
+  const visited = new Set<string>();
+  let tag = rootTag;
+  let parent: Group | undefined;
+  while (tag !== "" && !visited.has(tag)) {
+    visited.add(tag);
+    const group = byTag.get(tag);
+    const item = parent?.items.find((entry) => entry.tag === tag);
+    if (!group) {
+      chain.push({
+        tag,
+        detail: item ? proxyDisplayType(item.type) : "",
+        group: false,
+        delay: item?.urlTestDelay ?? 0,
+      });
+      break;
     }
+    chain.push({
+      tag,
+      detail: `${proxyDisplayType(group.type)} · ${nodes(group.items.length)}`,
+      group: true,
+      delay: item?.urlTestDelay ?? 0,
+    });
+    parent = group;
+    tag = group.selected;
+  }
+  return chain;
+}
+
+function RoutePanel() {
+  const api = useApi();
+  const { t } = useI18n();
+  const groups = useStream(api.groups);
+  const clashMode = useStream(api.clashMode);
+  const list = groups.data.groups;
+  const [stored, setStored] = useState(() => loadStoredString(ROUTE_GROUP_KEY));
+  const root = list.find((group) => group.tag === stored) ?? primaryGroup(list);
+  const chain = useMemo(
+    () => (root ? buildChain(list, root.tag, (count) => t("{count} nodes", { count })) : []),
+    [list, root, t],
+  );
+  const last = chain[chain.length - 1];
+  const delay = last && !last.group ? last.delay : 0;
+  const tone = urlTestDelayTone(delay);
+  const scaleMax = delay > 400 ? Math.ceil(delay / 200) * 200 : 400;
+
+  return (
+    <Panel span={4}>
+      <PanelHead
+        icon="route"
+        title={t("Active route")}
+        actions={clashMode.data.currentMode !== "" && <span className="badge outline">{clashMode.data.currentMode}</span>}
+      />
+      {list.length === 0 ? (
+        <EmptyState icon="route">{t("Empty groups")}</EmptyState>
+      ) : (
+        <>
+          <ol className={styles.chain}>
+            {chain.map((step, index) => {
+              const terminal = index === chain.length - 1;
+              const split = splitNodeTag(step.tag);
+              return (
+                <li key={step.tag} className={cx(styles.chainStep, terminal && styles.chainActive)}>
+                  <span className={styles.chainMarker} />
+                  <div className={styles.chainText}>
+                    {index === 0 && list.length > 1 ? (
+                      <Select
+                        inline
+                        options={list.map((group) => ({ value: group.tag, label: group.tag }))}
+                        value={step.tag}
+                        onChange={(value) => {
+                          saveStoredString(ROUTE_GROUP_KEY, value);
+                          setStored(value);
+                        }}
+                      />
+                    ) : (
+                      <span className={styles.chainTitle}>
+                        {split.flag !== "" && <span className={styles.flag}>{split.flag}</span>}
+                        {split.name}
+                      </span>
+                    )}
+                    <span className={styles.chainDetail}>
+                      {split.prefix !== "" ? `${split.prefix} · ${step.detail}` : step.detail}
+                    </span>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+          <div className={styles.latency}>
+            <div className={styles.latencyHead}>
+              <span className="secondary">{t("Latency")}</span>
+              <Metric value={delay > 0 ? delay : "—"} unit="ms" size="medium" />
+            </div>
+            <LatencyScale delay={delay} max={scaleMax} tone={tone} />
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/* --------------------------------------------------------------- memory */
+
+const MEBIBYTE = 1024 * 1024;
+
+function gaugeMax(bytes: number): number {
+  let max = 64 * MEBIBYTE;
+  while (max < bytes * 1.25) {
+    max *= 2;
+  }
+  return max;
+}
+
+function MemoryPanel() {
+  const api = useApi();
+  const { t } = useI18n();
+  const status = useStream(api.status);
+  const memory = Number(status.data.current?.memory ?? 0);
+  const peak = Math.max(...status.data.memoryHistory, memory);
+  const max = gaugeMax(peak);
+  const labels = [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
+    const value = (max * fraction) / MEBIBYTE;
+    return value >= 1024 ? `${(value / 1024).toFixed(value % 1024 === 0 ? 0 : 1)}G` : String(Math.round(value));
+  });
+  const [value, unit] = splitUnit(formatMemoryBytes(memory));
+
+  return (
+    <Panel span={4}>
+      <PanelHead icon="memory" title={t("Memory")} subtitle={t("Resident memory of the core")} />
+      <div className={styles.gaugeWrap}>
+        <RadialGauge value={memory} max={max} tickLabels={labels}>
+          <Metric value={status.data.current ? value : "—"} size="medium" />
+          <span className={styles.gaugeUnit}>{t("{unit} in use", { unit: unit || "MB" })}</span>
+        </RadialGauge>
+      </div>
+    </Panel>
+  );
+}
+
+/* ----------------------------------------------------------- goroutines */
+
+function GoroutinesPanel() {
+  const api = useApi();
+  const { t } = useI18n();
+  const status = useStream(api.status);
+  const history = status.data.goroutineHistory;
+  const current = status.data.current?.goroutines;
+  const min = history.length > 0 ? Math.min(...history) : 0;
+  const max = history.length > 0 ? Math.max(...history) : 0;
+  return (
+    <Panel span={4}>
+      <PanelHead icon="workflow" title={t("Goroutines")} subtitle={t("Concurrent tasks in the core")} />
+      <Metric value={current ?? "—"} unit={t("running")} size="large" />
+      <div className={styles.flexFill} />
+      <SmoothLine data={history} capacity={STATUS_HISTORY_LENGTH} height={110} />
+      <div className={cx("metric-foot", styles.rangeFoot)}>
+        <span>
+          {t("Low")} <strong>{min}</strong>
+        </span>
+        <span>
+          {t("High")} <strong>{max}</strong>
+        </span>
+      </div>
+    </Panel>
+  );
+}
+
+/* ---------------------------------------------------------- connections */
+
+function ConnectionsPanel() {
+  const api = useApi();
+  const { t } = useI18n();
+  const status = useStream(api.status);
+  const [confirming, setConfirming] = useState(false);
+  const inbound = status.data.current?.connectionsIn ?? 0;
+  const outbound = status.data.current?.connectionsOut ?? 0;
+  const total = inbound + outbound;
+  const share = total > 0 ? inbound / total : 0.5;
+
+  return (
+    <Panel span={4}>
+      <PanelHead
+        icon="hub"
+        title={t("Connections")}
+        subtitle={t("Tracked right now")}
+        actions={
+          <button type="button" className={styles.linkButton} onClick={() => navigate("connections")}>
+            {t("View all")}
+            <Icon name="keyboard_arrow_right" size={14} />
+          </button>
+        }
+      />
+      <div className={styles.connectionsSplit}>
+        <div>
+          <div className="metric-label">
+            <span className="swatch down" />
+            {t("Inbound")}
+          </div>
+          <Metric value={status.data.current ? inbound : "—"} size="large" />
+        </div>
+        <div className={styles.connectionsDivider} />
+        <div>
+          <div className="metric-label">
+            <span className="swatch up" />
+            {t("Outbound")}
+          </div>
+          <Metric value={status.data.current ? outbound : "—"} size="large" />
+        </div>
+      </div>
+      <div className={styles.flexFill} />
+      <div className={styles.shareBar}>
+        <span className={styles.shareIn} style={{ flexGrow: share }} />
+        <span className={styles.shareOut} style={{ flexGrow: 1 - share }} />
+      </div>
+      <div className={styles.connectionsFoot}>
+        <span className="metric-foot">{t("{percent}% inbound", { percent: (share * 100).toFixed(1) })}</span>
+        <Button size="small" disabled={inbound === 0} onClick={() => setConfirming(true)}>
+          {t("Close all")}
+        </Button>
+      </div>
+      {confirming && (
+        <Dialog onClose={() => setConfirming(false)}>
+          <h3>{t("Close all connections?")}</h3>
+          <p className="dialog-message">{t("Every active connection will be closed. Applications reconnect on their own.")}</p>
+          <div className="row-actions dialog-actions">
+            <Button onClick={() => setConfirming(false)}>{t("Cancel")}</Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setConfirming(false);
+                api.closeAllConnections().catch(showError);
+              }}
+            >
+              {t("Close all")}
+            </Button>
+          </div>
+        </Dialog>
+      )}
+    </Panel>
+  );
+}
+
+/* -------------------------------------------------------------- latency */
+
+const LATENCY_TAB_KEY = "overview-latency-group";
+
+function LatencyPanel() {
+  const api = useApi();
+  const { t } = useI18n();
+  const groups = useStream(api.groups);
+  const list = groups.data.groups;
+  const [stored, setStored] = useState(() => loadStoredString(LATENCY_TAB_KEY) ?? "");
+  const [testing, setTesting] = useState<string | null>(null);
+  const group = list.find((entry) => entry.tag === stored) ?? primaryGroup(list);
+  const [selected, setPendingSelection] = usePendingValue(group?.selected ?? "");
+
+  const nodes: StemNode[] = (group?.items ?? []).map((item) => {
+    const split = splitNodeTag(item.tag);
+    return {
+      tag: item.tag,
+      label: `${split.flag}${split.flag !== "" ? " " : ""}${split.name}`,
+      delay: item.urlTestDelay,
+      tone: urlTestDelayTone(item.urlTestDelay),
+    };
+  });
+
+  const runTest = () => {
+    if (!group) {
+      return;
+    }
+    const tag = group.tag;
+    setTesting(tag);
+    api
+      .urlTest(tag)
+      .catch(showError)
+      .finally(() => setTesting((current) => (current === tag ? null : current)));
   };
 
-  const renderCard = (card: string, wide: boolean) => {
-    switch (card) {
-      case "uploadTraffic":
-        return (
-          <Card key={card} icon="upload" title={t("Upload")} wide={wide}>
-            <div className={styles.metric}>
-              {trafficAvailable ? `${formatBytes(Number(current?.uplink ?? 0))}/s` : "..."}
+  return (
+    <Panel>
+      <PanelHead
+        icon="speed"
+        title={t("Node latency")}
+        subtitle={group?.selectable ? t("Click a stem to switch the selector") : t("Latest URL test of each member")}
+        actions={
+          <>
+            <div className={cx("legend", styles.latencyLegend)}>
+              <span className="legend-item">
+                <span className={cx(styles.legendDot, styles.legendGood)} />
+                {`< ${LATENCY_GOOD_MS} ms`}
+              </span>
+              <span className="legend-item">
+                <span className={cx(styles.legendDot, styles.legendMedium)} />
+                {`${LATENCY_GOOD_MS}–${LATENCY_MEDIUM_MS}`}
+              </span>
+              <span className="legend-item">
+                <span className={cx(styles.legendDot, styles.legendBad)} />
+                {`> ${LATENCY_MEDIUM_MS}`}
+              </span>
+              <span className="legend-item">
+                <span className={cx(styles.legendDot, styles.legendNone)} />
+                {t("No result")}
+              </span>
             </div>
-            <div className={styles.metricSub}>
-              {trafficAvailable ? formatBytes(Number(current?.uplinkTotal ?? 0)) : "..."}
-            </div>
-            <Sparkline data={status.data.uplinkHistory} />
-          </Card>
-        );
-      case "downloadTraffic":
-        return (
-          <Card key={card} icon="download" title={t("Download")} wide={wide}>
-            <div className={styles.metric}>
-              {trafficAvailable ? `${formatBytes(Number(current?.downlink ?? 0))}/s` : "..."}
-            </div>
-            <div className={styles.metricSub}>
-              {trafficAvailable ? formatBytes(Number(current?.downlinkTotal ?? 0)) : "..."}
-            </div>
-            <Sparkline data={status.data.downlinkHistory} />
-          </Card>
-        );
-      case "status":
-        return (
-          <Card key={card} icon="bug_report" title={t("Status")} wide={wide}>
-            <DataLine label={t("Memory")} value={current ? formatMemoryBytes(current.memory) : "..."} />
-            <DataLine label={t("Goroutines")} value={current ? current.goroutines : "..."} />
-          </Card>
-        );
-      case "connections":
-        return (
-          <Card key={card} icon="cable" title={t("Connections")} wide={wide}>
-            <DataLine label={t("Inbound")} value={current ? current.connectionsIn : "..."} />
-            <DataLine label={t("Outbound")} value={current ? current.connectionsOut : "..."} />
-          </Card>
-        );
-      case "systemProxy":
-        if (props.host === null) {
-          return null;
+            <Button className="accent" disabled={!group || testing === group.tag} onClick={runTest}>
+              {testing !== null && testing === group?.tag ? <Spinner /> : <Icon name="bolt" />}
+              {t("Test latency")}
+            </Button>
+          </>
         }
-        return <SystemProxyCard key={card} host={props.host} />;
-      case "clashMode":
-        if (modeList.length <= 1) {
-          return null;
-        }
-        return (
-          <Card key={card} icon="route" title={t("Mode")} wide>
-            <AdaptiveSegmented
-              options={modeList.map((mode) => ({ value: mode, label: mode }))}
-              value={currentMode}
-              onChange={(mode) => {
-                setPendingMode(mode);
-                api.setClashMode(mode).catch((error: unknown) => {
-                  setPendingMode(null);
+      />
+      {list.length === 0 ? (
+        <EmptyState icon="speed">{t("Empty groups")}</EmptyState>
+      ) : (
+        <>
+          <Tabs
+            options={list.map((entry) => ({ value: entry.tag, label: entry.tag, count: entry.items.length }))}
+            value={group?.tag ?? ""}
+            onChange={(value) => {
+              saveStoredString(LATENCY_TAB_KEY, value);
+              setStored(value);
+            }}
+          />
+          <div className={styles.stemsWrap}>
+            <NodeStems
+              key={group?.tag}
+              nodes={nodes}
+              selected={selected}
+              selectable={group?.selectable ?? false}
+              onSelect={(tag) => {
+                if (!group?.selectable || tag === selected) {
+                  return;
+                }
+                setPendingSelection(tag);
+                api.selectOutbound(group.tag, tag).catch((error: unknown) => {
+                  setPendingSelection(null);
                   showError(error);
                 });
               }}
             />
-          </Card>
-        );
-      case "profile":
-        if (props.host === null) {
-          return null;
-        }
-        return <ProfileCard key={card} host={props.host} />;
-      default:
-        return null;
-    }
-  };
-
-  const visibleCards = orderedEnabledCards(props.config).filter(isCardVisible);
-  const wideCards = new Set(
-    groupCardRows(visibleCards)
-      .filter((row) => row.length === 1)
-      .flat(),
-  );
-
-  return (
-    <div className={styles.cardGrid}>
-      {visibleCards.map((card) => renderCard(card, wideCards.has(card)))}
-    </div>
+          </div>
+        </>
+      )}
+    </Panel>
   );
 }
 
-function CardManagementDialog(props: {
-  config: DashboardCardsConfig;
-  desktop: boolean;
-  onChange: (config: DashboardCardsConfig) => void;
-  onClose: () => void;
-}) {
-  const { t } = useI18n();
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-  const listRef = useRef<HTMLDivElement>(null);
-  const enabledCards = new Set(props.config.enabled);
+/* ------------------------------------------------------------ providers */
 
-  const moveDrag = (event: React.PointerEvent<HTMLElement>) => {
-    if (dragIndex === null || !listRef.current) {
-      return;
-    }
-    const rows = Array.from(listRef.current.children) as HTMLElement[];
-    const target = rows.findIndex((row) => {
-      const rect = row.getBoundingClientRect();
-      return event.clientY >= rect.top && event.clientY < rect.bottom;
-    });
-    if (target >= 0 && target !== dragIndex) {
-      props.onChange(moveCard(props.config, dragIndex, target));
-      setDragIndex(target);
-    }
-  };
+function ProvidersSummaryPanel(props: { wide: boolean }) {
+  const api = useApi();
+  const { t, language } = useI18n();
+  const now = useNow(30_000);
+  const providers = useStream(api.extended.providers);
+  const list = providers.data.providers;
 
   return (
-    <Dialog onClose={props.onClose}>
-      <h3>{t("Dashboard Items")}</h3>
-      <div className={styles.cardManageList} ref={listRef}>
-        {props.config.order.map((card, index) => {
-          if (!isDashboardCardId(card)) {
-            return null;
-          }
-          const entry = DASHBOARD_CARDS[card];
-          const permanent = entry.permanent === true;
-          const enabled = permanent || enabledCards.has(card);
-          return (
-            <div
-              key={card}
-              className={cx(styles.cardManageRow, dragIndex === index && styles.dragging)}
-            >
-              <span
-                className={styles.dragHandle}
-                onPointerDown={(event) => {
-                  event.preventDefault();
-                  event.currentTarget.setPointerCapture(event.pointerId);
-                  setDragIndex(index);
+    <Panel span={props.wide ? 12 : 6}>
+      <PanelHead
+        icon="provider"
+        title={t("Providers")}
+        subtitle={t("{count} subscriptions", { count: list.length })}
+        actions={
+          <button type="button" className={styles.linkButton} onClick={() => navigate("providers")}>
+            {t("Manage")}
+            <Icon name="keyboard_arrow_right" size={14} />
+          </button>
+        }
+      />
+      {!providers.data.loaded ? (
+        <EmptyState>{t("Loading...")}</EmptyState>
+      ) : list.length === 0 ? (
+        <EmptyState icon="provider">{t("No providers configured")}</EmptyState>
+      ) : (
+        <div className={styles.providerRows}>
+          {list.map((provider) => {
+            const info = provider.subscriptionInfo;
+            const used = info ? Number(info.upload + info.download) : 0;
+            const quota = info ? Number(info.total) : 0;
+            const ratio = quota > 0 ? used / quota : 0;
+            return (
+              <div key={provider.tag} className={styles.providerRow}>
+                <div className={styles.providerName}>
+                  <span>{provider.tag}</span>
+                  <span className="faint mono">{provider.items.length}</span>
+                  {provider.lastError !== "" && <span className="badge danger">{t("Error")}</span>}
+                </div>
+                {quota > 0 ? (
+                  <>
+                    <Meter value={ratio} tone={ratio > 0.85 ? "accent" : undefined} />
+                    <div className={cx("metric-foot", styles.providerFoot)}>
+                      <span>
+                        <strong>{formatBytes(used)}</strong> / {formatBytes(quota)}
+                      </span>
+                      {info && info.expireTime > 0n && (
+                        <span>{t("Expires {time}", { time: formatRelativeTime(Number(info.expireTime) * 1000, now, language) })}</span>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="metric-foot">
+                    {provider.updatedAt > 0n
+                      ? t("Updated {time}", { time: formatRelativeTime(Number(provider.updatedAt) * 1000, now, language) })
+                      : t("Never updated")}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ DNS */
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function DnsSummaryPanel(props: { wide: boolean }) {
+  const api = useApi();
+  const { t } = useI18n();
+  const cache = useExtension("dns_cache");
+  const [stats, setStats] = useState<DNSQueryLogStats | null>(null);
+  const [flushing, setFlushing] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const load = () => {
+      api.extended
+        .dnsLogStats({ since: Date.now() - DAY_MS }, 3600, 5, controller.signal)
+        .then(setStats, () => {});
+    };
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [api]);
+
+  const total = Number(stats?.total ?? 0);
+  const blocked = Number(stats?.statuses.rejected ?? 0n) + Number(stats?.statuses.predefined ?? 0n);
+  const cached = Number(stats?.statuses.cached ?? 0n) + Number(stats?.statuses.optimistic ?? 0n);
+  const buckets = stats?.buckets ?? [];
+  const bucketMax = Math.max(...buckets.map((bucket) => Number(bucket.total)), 1);
+  const average = Number(stats?.upstreamDuration?.average ?? 0n) / 1000;
+
+  return (
+    <Panel span={props.wide ? 12 : 6}>
+      <PanelHead
+        icon="dns"
+        title="DNS"
+        subtitle={t("Queries in the last 24 hours")}
+        actions={
+          <>
+            {cache && (
+              <Button
+                size="small"
+                disabled={flushing}
+                onClick={() => {
+                  setFlushing(true);
+                  api.extended
+                    .clearDnsCache()
+                    .catch(showError)
+                    .finally(() => setFlushing(false));
                 }}
-                onPointerMove={moveDrag}
-                onPointerUp={() => setDragIndex(null)}
-                onPointerCancel={() => setDragIndex(null)}
               >
-                <Icon name="drag_handle" size={14} />
+                {flushing ? <Spinner /> : <Icon name="eraser" size={13} />}
+                {t("Flush cache")}
+              </Button>
+            )}
+            <button type="button" className={styles.linkButton} onClick={() => navigate("dns")}>
+              {t("Query log")}
+              <Icon name="keyboard_arrow_right" size={14} />
+            </button>
+          </>
+        }
+      />
+      <div className={styles.dnsStats}>
+        <div>
+          <div className="metric-label">{t("Queries")}</div>
+          <Metric value={stats ? total.toLocaleString() : "—"} size="medium" />
+        </div>
+        <div>
+          <div className="metric-label">{t("Blocked")}</div>
+          <Metric
+            value={stats ? blocked.toLocaleString() : "—"}
+            unit={total > 0 ? `${((blocked / total) * 100).toFixed(1)}%` : undefined}
+            size="medium"
+          />
+        </div>
+        <div>
+          <div className="metric-label">{t("From cache")}</div>
+          <Metric
+            value={stats ? (total > 0 ? ((cached / total) * 100).toFixed(1) : "0") : "—"}
+            unit="%"
+            size="medium"
+          />
+        </div>
+        <div>
+          <div className="metric-label">{t("Upstream avg")}</div>
+          <Metric value={stats && average > 0 ? formatDurationMs(average).replace("ms", "") : "—"} unit={average > 0 && average < 1000 ? "ms" : undefined} size="medium" />
+        </div>
+      </div>
+      <div className={styles.flexFill} />
+      <div className={styles.dnsBars} aria-hidden="true">
+        {buckets.map((bucket) => {
+          const value = Number(bucket.total);
+          const bucketBlocked = Number(bucket.statuses.rejected ?? 0n) + Number(bucket.statuses.predefined ?? 0n);
+          return (
+            <span key={String(bucket.time)} className={styles.dnsBar} title={`${new Date(Number(bucket.time)).toLocaleTimeString()} · ${value}`}>
+              <span style={{ height: `${(value / bucketMax) * 100}%` }}>
+                <span style={{ height: value > 0 ? `${(bucketBlocked / value) * 100}%` : 0 }} />
               </span>
-              <Icon name={entry.icon} size={15} />
-              <span className={styles.cardManageTitle}>{t(entry.title)}</span>
-              <button
-                type="button"
-                className={enabled ? "switch on" : "switch"}
-                role="switch"
-                aria-checked={enabled}
-                aria-label={t(entry.title)}
-                disabled={permanent}
-                onClick={() => props.onChange(toggleCard(props.config, card))}
-              />
-            </div>
+            </span>
           );
         })}
       </div>
-      <div className="row-actions dialog-actions">
-        <Button
-          variant="danger"
-          style={{ marginInlineEnd: "auto" }}
-          onClick={() => props.onChange(resetDashboardCardsConfig(props.desktop))}
-        >
-          {t("Reset")}
-        </Button>
-        <Button variant="primary" onClick={props.onClose}>
-          {t("Done")}
-        </Button>
+      <div className={cx("metric-foot", styles.rangeFoot)}>
+        <span>-24h</span>
+        <span>{t("now")}</span>
       </div>
-    </Dialog>
+    </Panel>
   );
 }

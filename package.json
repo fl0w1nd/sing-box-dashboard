@@ -4,17 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "packageManager": "pnpm@11.13.0",
-  "exports": {
-    ".": "./src/App.tsx",
-    "./tray": "./src/TrayMenu.tsx",
-    "./storage": "./src/lib/storage.ts"
-  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "generate": "buf generate && node scripts/gen-icons.mjs && node scripts/gen-terminal-themes.mjs",
-    "generate:dev": "cp ../sing-box/daemon/started_service.proto proto/daemon/started_service.proto && buf generate",
+    "generate": "buf generate && node scripts/gen-terminal-themes.mjs",
+    "generate:dev": "cp ../sing-box/daemon/started_service.proto ../sing-box/daemon/extended_service.proto proto/daemon/ && buf generate",
     "lint": "eslint src scripts eslint.config.js vite.config.ts",
     "lint:css": "stylelint \"src/**/*.css\"",
     "test": "vitest run"
@@ -29,15 +24,15 @@
     "@codemirror/view": "^6.43.9",
     "@connectrpc/connect": "^2.1.2",
     "@connectrpc/connect-web": "^2.1.2",
-    "@fontsource-variable/schibsted-grotesk": "^5.3.0",
-    "@fontsource-variable/source-serif-4": "^5.3.0",
-    "@fontsource/ibm-plex-mono": "^5.3.0",
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource/noto-color-emoji": "^5.3.1",
     "@lezer/highlight": "^1.2.3",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "codemirror-json5": "^1.0.3",
     "luby-transform": "0.2.0",
+    "lucide-react": "^1.63.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",
@@ -49,7 +44,6 @@
     "@bufbuild/buf": "^1.72.0",
     "@bufbuild/protoc-gen-es": "^2.14.0",
     "@eslint/js": "^10.0.1",
-    "@material-design-icons/svg": "^0.14.15",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@types/w3c-web-usb": "^1.0.14",
@@ -67,5 +61,6 @@
     "vite": "^8.2.1",
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.10"
-  }
+  },
+  "description": "Web dashboard for sing-box Extended (fl0w1nd/sing-box)."
 }

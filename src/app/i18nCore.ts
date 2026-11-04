@@ -25,13 +25,7 @@ export function detectSystemLanguage(): Language {
   for (const tag of navigator.languages ?? [navigator.language]) {
     const lower = tag.toLowerCase();
     if (lower.startsWith("zh")) {
-      return /hant|tw|hk|mo/.test(lower) ? "zh-Hant" : "zh-Hans";
-    }
-    if (lower.startsWith("fa")) {
-      return "fa";
-    }
-    if (lower.startsWith("ru")) {
-      return "ru";
+      return "zh-Hans";
     }
     if (lower.startsWith("en")) {
       return "en";

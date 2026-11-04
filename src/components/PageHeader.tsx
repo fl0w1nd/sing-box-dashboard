@@ -1,48 +1,31 @@
-import { createContext, useContext, useMemo, type ReactNode } from "react";
-import { createPortal } from "react-dom";
+import { createContext, useContext, type ReactNode } from "react";
 
-import { useDesktopHost } from "../app/desktop";
 import { Icon } from "./Icon";
-import { IconButton } from "./ui";
 
-interface ToolbarSlots {
-  lead: HTMLElement | null;
-  end: HTMLElement | null;
+// The eyebrow above each page title reads "<server> / <section>"; the shell
+// provides the server name and the section of the current route.
+export interface PageHeaderContextValue {
+  server: string;
+  section: string | null;
 }
 
-const ToolbarSlotsContext = createContext<ToolbarSlots>({ lead: null, end: null });
-
-export function ToolbarSlotsProvider(props: {
-  lead: HTMLElement | null;
-  end: HTMLElement | null;
-  children: ReactNode;
-}) {
-  const value = useMemo(() => ({ lead: props.lead, end: props.end }), [props.lead, props.end]);
-  return <ToolbarSlotsContext.Provider value={value}>{props.children}</ToolbarSlotsContext.Provider>;
-}
+export const PageHeaderContext = createContext<PageHeaderContextValue>({ server: "", section: null });
 
 export function PageHeader(props: {
   title: ReactNode;
   actions?: ReactNode;
   back?: { label: string; onClick: () => void };
+  crumbs?: string[];
 }) {
-  const host = useDesktopHost();
-  const slots = useContext(ToolbarSlotsContext);
-
-  if (host !== null) {
-    const back =
-      props.back !== undefined ? (
-        <IconButton aria-label={props.back.label} onClick={props.back.onClick}>
-          <Icon name="arrow_back" size={18} />
-        </IconButton>
-      ) : null;
-    return (
-      <>
-        {back !== null && slots.lead !== null && createPortal(back, slots.lead)}
-        {props.actions !== undefined && slots.end !== null && createPortal(props.actions, slots.end)}
-      </>
-    );
-  }
+  const context = useContext(PageHeaderContext);
+  const crumbs =
+    props.crumbs ??
+    (context.section !== null
+      ? [context.section]
+      : typeof props.title === "string"
+        ? [props.title]
+        : []);
+  const eyebrow = [context.server, ...crumbs].filter((crumb) => crumb !== "");
 
   return (
     <div className="page-header">
@@ -51,7 +34,16 @@ export function PageHeader(props: {
           <Icon name="arrow_back" size={20} />
         </button>
       )}
-      <h1 className="page-title">{props.title}</h1>
+      <div className="page-heading">
+        {eyebrow.length > 0 && (
+          <div className="page-eyebrow">
+            {eyebrow.map((crumb, index) => (
+              <span key={index}>{crumb}</span>
+            ))}
+          </div>
+        )}
+        <h1 className="page-title">{props.title}</h1>
+      </div>
       {props.actions !== undefined && <div className="actions">{props.actions}</div>}
     </div>
   );

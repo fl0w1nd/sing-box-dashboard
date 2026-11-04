@@ -26,9 +26,10 @@ import {
   type BidirectionalStreamHandlers,
 } from "./bidirectional";
 import { serverConnectUrl, type Server } from "./config";
+import { ExtendedApi } from "./extended";
 import { StreamStore } from "./stream";
 
-export const STATUS_HISTORY_LENGTH = 30;
+export const STATUS_HISTORY_LENGTH = 60;
 const LOG_MAX_ENTRIES = 3000;
 const CLOSED_CONNECTIONS_MAX = 1000;
 
@@ -40,6 +41,8 @@ export interface StatusData {
   current: Status | null;
   uplinkHistory: number[];
   downlinkHistory: number[];
+  memoryHistory: number[];
+  goroutineHistory: number[];
 }
 
 export interface GroupsData {
@@ -113,6 +116,7 @@ const SUBSCRIPTION_INTERVAL = 1_000_000_000n;
 export class DaemonApi {
   readonly config: Server;
   readonly client: Client<typeof StartedService>;
+  readonly extended: ExtendedApi;
   private readonly bidirectionalTransport: Transport | undefined;
   private readonly language: string;
 
@@ -135,8 +139,7 @@ export class DaemonApi {
     this.config = config;
     this.language = language;
     this.bidirectionalTransport = transport ? withLanguageHeader(transport, language) : undefined;
-    this.client = createClient(
-      StartedService,
+    const unaryTransport =
       this.bidirectionalTransport ??
         createGrpcWebTransport({
           baseUrl: serverConnectUrl(config.url),
@@ -149,8 +152,9 @@ export class DaemonApi {
               return next(request);
             },
           ],
-        }),
-    );
+        });
+    this.client = createClient(StartedService, unaryTransport);
+    this.extended = new ExtendedApi(unaryTransport);
     this.serviceStatus = new StreamStore<ServiceStatusData>(
       () => ({ status: null }),
       async ({ signal, update }) => {
@@ -161,7 +165,13 @@ export class DaemonApi {
     );
 
     this.status = new StreamStore<StatusData>(
-      () => ({ current: null, uplinkHistory: [], downlinkHistory: [] }),
+      () => ({
+        current: null,
+        uplinkHistory: [],
+        downlinkHistory: [],
+        memoryHistory: [],
+        goroutineHistory: [],
+      }),
       async ({ signal, update }) => {
         for await (const message of this.client.subscribeStatus(
           { interval: SUBSCRIPTION_INTERVAL },
@@ -171,6 +181,8 @@ export class DaemonApi {
             current: message,
             uplinkHistory: appendHistory(data.uplinkHistory, Number(message.uplink)),
             downlinkHistory: appendHistory(data.downlinkHistory, Number(message.downlink)),
+            memoryHistory: appendHistory(data.memoryHistory, Number(message.memory)),
+            goroutineHistory: appendHistory(data.goroutineHistory, message.goroutines),
           }));
         }
       },
@@ -403,6 +415,7 @@ export class DaemonApi {
     this.usbip.retryNow();
     this.openConnect.retryNow();
     this.openVPN.retryNow();
+    this.extended.retryNow();
   }
 
   reconnectNow(): void {
@@ -415,6 +428,7 @@ export class DaemonApi {
     this.outbounds.reconnectNow();
     this.tailscale.reconnectNow();
     this.usbip.reconnectNow();
+    this.extended.reconnectNow();
   }
 
   async urlTest(outboundTag: string): Promise<void> {

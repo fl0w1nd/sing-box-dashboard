@@ -3,20 +3,13 @@ import { createPortal } from "react-dom";
 import { encode as encodeQR } from "uqr";
 
 import type { DelayTone } from "../api/format";
-import {
-  ACCENT_PRESETS,
-  isAccentPreset,
-  normalizeAccentColor,
-  useIsMobile,
-  type AccentPreference,
-  type AccentPreset,
-  type ThemePreference,
-} from "../app/context";
+import { useIsMobile } from "../app/context";
 import { showError } from "../app/errorStore";
 import { useDismiss } from "../app/hooks";
-import { useI18n, type MessageKey } from "../app/i18n";
+import { useI18n } from "../app/i18n";
 import { useLatestRef } from "../app/useLatest";
 import { cx } from "../lib/cx";
+import { BrandMark } from "./Board";
 import { Icon, type IconName } from "./Icon";
 
 export function Card(props: { icon?: IconName; title?: ReactNode; actions?: ReactNode; wide?: boolean; className?: string; children?: ReactNode }) {
@@ -82,6 +75,7 @@ export function Brand(props: { className?: string; product?: string | null }) {
   const product = props.product === undefined ? "dashboard" : props.product;
   return (
     <div className={cx("setup-brand", props.className)}>
+      <BrandMark />
       sing-box
       {product !== null && <small>{product}</small>}
     </div>
@@ -359,127 +353,6 @@ export function MenuLink(props: { href: string; children: ReactNode }) {
       <span className="menu-check" />
       {props.children}
     </a>
-  );
-}
-
-export function ThemeSelect(props: {
-  theme: ThemePreference;
-  onChange: (theme: ThemePreference) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="icon-segmented">
-      {(
-        [
-          { value: "auto", icon: "brightness_auto", title: t("System") },
-          { value: "light", icon: "light_mode", title: t("Light") },
-          { value: "dark", icon: "dark_mode", title: t("Dark") },
-        ] as const
-      ).map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          title={option.title}
-          aria-label={option.title}
-          className={props.theme === option.value ? "active" : ""}
-          onClick={() => props.onChange(option.value)}
-        >
-          <Icon name={option.icon} size={15} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const ACCENT_TITLES: Record<AccentPreset, MessageKey> = {
-  default: "Default",
-  blue: "Blue",
-  purple: "Purple",
-  pink: "Pink",
-  red: "Red",
-  orange: "Orange",
-  yellow: "Yellow",
-  green: "Green",
-  graphite: "Graphite",
-};
-
-function AccentSelect(props: {
-  accent: AccentPreference;
-  onChange: (accent: AccentPreference) => void;
-}) {
-  const { t } = useI18n();
-  const custom = isAccentPreset(props.accent) ? null : props.accent;
-  const wellValue =
-    custom ??
-    (getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#1a1a1a");
-  return (
-    <div className="accent-picker">
-      {ACCENT_PRESETS.map((preset) => (
-        <button
-          key={preset}
-          type="button"
-          title={t(ACCENT_TITLES[preset])}
-          aria-label={t(ACCENT_TITLES[preset])}
-          aria-pressed={props.accent === preset}
-          className={props.accent === preset ? "active" : ""}
-          data-accent={preset}
-          onClick={() => props.onChange(preset)}
-        />
-      ))}
-      <label className={custom !== null ? "custom active" : "custom"} title={t("Custom color")}>
-        <input
-          type="color"
-          value={wellValue}
-          aria-label={t("Custom color")}
-          onChange={(event) =>
-            props.onChange(normalizeAccentColor(event.target.value) ?? event.target.value)
-          }
-        />
-      </label>
-    </div>
-  );
-}
-
-export function ThemeMenu(props: {
-  accent: AccentPreference;
-  onChange: (accent: AccentPreference) => void;
-  openUp?: boolean;
-}) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useDismiss(ref, open, () => setOpen(false));
-
-  return (
-    <div className="menu-anchor" ref={ref}>
-      <Button aria-expanded={open} onClick={() => setOpen(!open)}>
-        {isAccentPreset(props.accent) ? (
-          <>
-            <span className="accent-dot" data-accent={props.accent} />
-            {t(ACCENT_TITLES[props.accent])}
-          </>
-        ) : (
-          <>
-            <span className="accent-dot" style={{ background: props.accent }} />
-            {props.accent.toUpperCase()}
-          </>
-        )}
-        <Icon name="unfold_more" size={13} />
-      </Button>
-      {open && (
-        <div className={props.openUp ? "menu open-up align-right accent-menu" : "menu align-right accent-menu"}>
-          <AccentSelect
-            accent={props.accent}
-            onChange={(accent) => {
-              props.onChange(accent);
-              if (isAccentPreset(accent)) {
-                setOpen(false);
-              }
-            }}
-          />
-        </div>
-      )}
-    </div>
   );
 }
 

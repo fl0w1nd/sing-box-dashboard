@@ -27,7 +27,8 @@ export type Translate = (key: MessageKey, params?: TranslateParams) => string;
 const pluralRulesCache = new Map<Language, Intl.PluralRules>();
 
 function translate(language: Language, key: MessageKey, params?: TranslateParams): string {
-  const entry: string | PluralForms = language === "en" ? key : (TRANSLATIONS[key]?.[language] ?? key);
+  const entry: string | PluralForms =
+    language === "en" ? key : ((TRANSLATIONS as Record<string, Record<string, string | PluralForms>>)[key]?.[language] ?? key);
   let text: string;
   if (typeof entry === "string") {
     text = entry;
@@ -87,7 +88,7 @@ export function I18nProvider(props: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.lang = language;
-    document.documentElement.dir = language === "fa" ? "rtl" : "ltr";
+    document.documentElement.dir = "ltr";
   }, [language]);
 
   const value = useMemo<I18n>(

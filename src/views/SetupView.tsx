@@ -3,14 +3,13 @@ import { useEffect, useRef, useState } from "react";
 import { createServerId, normalizeServerUrl, type Server } from "../api/config";
 import { DaemonApi } from "../api/daemon";
 import { useDiagnosedConnectError } from "../app/connectError";
-import type { AccentPreference, ThemePreference } from "../app/context";
 import { LanguageSelect, useI18n, type Translate } from "../app/i18n";
 import { Icon } from "../components/Icon";
 import {
   ReachabilityIndicator,
   useServerReachability,
 } from "../components/ReachabilityIndicator";
-import { Brand, Button, Field, SecretInput, Spinner, ThemeMenu, ThemeSelect } from "../components/ui";
+import { Brand, Button, Field, SecretInput, Spinner } from "../components/ui";
 import { guessApiBaseUrl } from "../lib/connectivity";
 import { checkServerReachable } from "../lib/reachability";
 import styles from "./SetupView.module.css";
@@ -32,13 +31,7 @@ async function testConnection(
   throw new Error(t("Stream ended without a status message"));
 }
 
-export function SetupView(props: {
-  onCreate: (server: Server) => void;
-  theme: ThemePreference;
-  onThemeChange: (theme: ThemePreference) => void;
-  accent: AccentPreference;
-  onAccentChange: (accent: AccentPreference) => void;
-}) {
+export function SetupView(props: { onCreate: (server: Server) => void }) {
   const { t, language } = useI18n();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
@@ -122,9 +115,12 @@ export function SetupView(props: {
   };
 
   return (
-    <div className="setup">
+    <div className="setup dot-grid">
       <div className="setup-panel">
         <Brand />
+        <p className={styles.setupIntro}>
+          {t("Connect to the API service of a sing-box core to monitor and control it.")}
+        </p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -175,14 +171,6 @@ export function SetupView(props: {
           </Button>
         </form>
         <div className={styles.setupFooter}>
-          <div className="settings-row">
-            <span className="settings-row-label">{t("Appearance")}</span>
-            <ThemeSelect theme={props.theme} onChange={props.onThemeChange} />
-          </div>
-          <div className="settings-row">
-            <span className="settings-row-label">{t("Theme")}</span>
-            <ThemeMenu accent={props.accent} onChange={props.onAccentChange} openUp />
-          </div>
           <div className="settings-row">
             <span className="settings-row-label">{t("Language")}</span>
             <LanguageSelect />

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   createServerId,
@@ -9,22 +9,21 @@ import {
   type Server,
   type ServersState,
 } from "../api/config";
-import { formatBytes } from "../api/format";
+import { formatDateTime } from "../api/format";
 import { useStream } from "../api/stream";
-import { navigate, useApi, type AccentPreference, type ThemePreference } from "../app/context";
-import { useDesktopHost, useLocalDesktopHost } from "../app/desktop";
-import type { DesktopHost, DesktopSettingsState, DesktopUpdateTrack } from "../app/desktop";
+import { useExtension, useExtensions } from "../app/capabilities";
+import { navigate, useApi } from "../app/context";
 import {
   loadDisableDeprecatedWarnings,
   saveDisableDeprecatedWarnings,
 } from "../app/deprecatedWarnings";
 import { showError } from "../app/errorStore";
-import { ServiceStatus_Type } from "../gen/daemon/started_service_pb";
-import { LanguageSelect, useI18n } from "../app/i18n";
+import { usePendingValue, useUnaryOnce } from "../app/hooks";
+import { LanguageSelect, useI18n, type MessageKey } from "../app/i18n";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { ReachabilityIndicator, useServerReachability } from "../components/ReachabilityIndicator";
-import { Button, Dialog, Field, IconButton, MenuItem, MenuLink, NavRow, SecretInput, Select, Spinner, ThemeMenu, ThemeSelect, useContextMenu } from "../components/ui";
+import { Button, Dialog, Field, IconButton, MenuItem, NavRow, SecretInput, Select, Spinner, Switch, useContextMenu } from "../components/ui";
 import {
   DEFAULT_DARK_THEME_NAME,
   DEFAULT_LIGHT_THEME_NAME,
@@ -33,425 +32,188 @@ import {
   type TerminalConfig,
 } from "../lib/tailscaleSSH";
 import { parseCustomTheme, type Scheme, type TerminalThemeEntry } from "../lib/terminalTheme";
-import { openUpdateDialog, useUpdatesState } from "./UpdateViews";
 import styles from "./SettingsView.module.css";
 import { cx } from "../lib/cx";
 
+const EXTENSION_LABELS: Record<string, MessageKey> = {
+  outbound_provider: "Outbound providers",
+  dns_query_log: "DNS query log",
+  dns_cache: "DNS cache",
+  tailscale_force_relay: "Tailscale force relay",
+};
+
 export function SettingsView() {
   const { t } = useI18n();
-  const host = useDesktopHost();
-  const localHost = useLocalDesktopHost();
+  const api = useApi();
+  const [disableWarnings, setDisableWarnings] = useState(loadDisableDeprecatedWarnings);
+  const serverInfo = useUnaryOnce(() => api.serverInfo());
+  const startedAt = useUnaryOnce(() => api.getStartedAt());
+  const extensions = useExtensions();
+  const forceRelaySupported = useExtension("tailscale_force_relay");
+  const { language } = useI18n();
+  const versionMenu = useContextMenu(
+    <MenuItem
+      icon="content_copy"
+      onSelect={() => {
+        void navigator.clipboard.writeText(serverInfo?.version ?? "").catch(showError);
+      }}
+    >
+      {t("Copy")}
+    </MenuItem>,
+  );
+  const extensionNames = Object.keys(extensions.versions);
 
   return (
     <div className="page">
       <PageHeader title={t("Settings")} />
-      <div className="settings-stack">
-        <div className="nav-list">
-          {host === null && (
-            <NavRow
-              icon="tune"
-              title={t("Preferences")}
-              onClick={() => navigate("settings/preferences")}
-            />
-          )}
-          {host !== null && (
-            <NavRow icon="info" title={t("App")} onClick={() => navigate("settings/app")} />
-          )}
-          {localHost !== null && (
-            <NavRow
-              icon="memory"
-              title={t("Core")}
-              onClick={() => navigate("settings/core")}
-            />
-          )}
-          <NavRow
-            icon="dns"
-            title={host !== null ? t("Remote Control") : t("Servers")}
-            onClick={() => navigate("settings/servers")}
-          />
-        </div>
-        <div>
-          <div className="list-section-title">{t("About")}</div>
-          <div className="nav-list">
-            <NavRow
-              icon="description"
-              title={t("Documentation")}
-              href="https://sing-box.sagernet.org"
-              contextMenu={
-                host !== null ? (
-                  <>
-                    <MenuLink href="https://sing-box.sagernet.org/changelog/">
-                      {t("Changelog")}
-                    </MenuLink>
-                    <MenuLink href="https://sing-box.sagernet.org/configuration/">
-                      {t("Configuration")}
-                    </MenuLink>
-                  </>
-                ) : undefined
-              }
-            />
-            <NavRow
-              icon="code"
-              title={t("Source Code")}
-              href={
-                host !== null
-                  ? "https://github.com/SagerNet/sing-box"
-                  : "https://github.com/SagerNet/sing-box-dashboard"
-              }
-              contextMenu={
-                host !== null ? (
-                  <MenuLink href="https://github.com/SagerNet/sing-box/releases">
-                    {t("Releases")}
-                  </MenuLink>
-                ) : undefined
-              }
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function AppSettingsView(props: {
-  theme: ThemePreference;
-  onThemeChange: (theme: ThemePreference) => void;
-  accent: AccentPreference;
-  onAccentChange: (accent: AccentPreference) => void;
-}) {
-  const host = useDesktopHost();
-  if (host === null) {
-    return null;
-  }
-  return <AppSettingsContent host={host} {...props} />;
-}
-
-function AppSettingsContent({
-  host,
-  ...preferences
-}: {
-  host: DesktopHost;
-  theme: ThemePreference;
-  onThemeChange: (theme: ThemePreference) => void;
-  accent: AccentPreference;
-  onAccentChange: (accent: AccentPreference) => void;
-}) {
-  const { t } = useI18n();
-  const [settings, setSettings] = useState<DesktopSettingsState | null>(null);
-  const [cacheSize, setCacheSize] = useState<number | null>(null);
-  const [clearing, setClearing] = useState(false);
-  const [savingOpenAtLogin, setSavingOpenAtLogin] = useState(false);
-
-  useEffect(() => {
-    let stale = false;
-    host.settings
-      .get()
-      .then((value) => {
-        if (!stale) {
-          setSettings(() => value);
-        }
-      })
-      .catch(showError);
-    host.settings
-      .cacheSize()
-      .then((value) => {
-        if (!stale) {
-          setCacheSize(() => value);
-        }
-      })
-      .catch(showError);
-    return () => {
-      stale = true;
-    };
-  }, [host]);
-
-  const clearCache = () => {
-    setClearing(true);
-    host.settings
-      .clearCache()
-      .then(() => host.settings.cacheSize())
-      .then(setCacheSize)
-      .catch(showError)
-      .finally(() => setClearing(false));
-  };
-
-  const refreshOpenAtLogin = () =>
-    host.settings.get().then(({ openAtLogin }) => {
-      setSettings((current) =>
-        current === null ? current : { ...current, openAtLogin },
-      );
-    });
-
-  return (
-    <div className="page">
-      <SettingsPageHeader title={t("App")} />
-      <div className="settings-stack">
-        {settings === null ? (
-          <Spinner />
-        ) : (
-          <>
+      <div className={styles.settingsColumns}>
+        <div className="settings-stack">
+          <div>
+            <div className="list-section-title">{t("Preferences")}</div>
             <div className={styles.settingsList}>
               <div className="settings-row">
+                <Icon name="language" size={16} />
                 <span className="settings-row-label">{t("Language")}</span>
                 <LanguageSelect />
               </div>
+              <button
+                type="button"
+                className="settings-row"
+                onClick={() => navigate("settings/preferences/terminal")}
+              >
+                <Icon name="terminal" size={16} />
+                <span className="settings-row-label">{t("Terminal Configuration")}</span>
+                <span className="settings-row-chevron">
+                  <Icon name="keyboard_arrow_right" size={14} />
+                </span>
+              </button>
               <div className="settings-row">
-                <span className="settings-row-label">{t("Appearance")}</span>
-                <ThemeSelect theme={preferences.theme} onChange={preferences.onThemeChange} />
-              </div>
-              <div className="settings-row">
-                <span className="settings-row-label">{t("Theme")}</span>
-                <ThemeMenu accent={preferences.accent} onChange={preferences.onAccentChange} />
-              </div>
-              <div className="settings-row">
-                <span className="settings-row-label">{t("Start At Login")}</span>
-                <button
-                  type="button"
-                  className={settings.openAtLogin ? "switch on" : "switch"}
-                  role="switch"
-                  aria-checked={settings.openAtLogin}
-                  aria-label={t("Start At Login")}
-                  disabled={savingOpenAtLogin}
-                  onClick={() => {
-                    const value = !settings.openAtLogin;
-                    setSettings({ ...settings, openAtLogin: value });
-                    setSavingOpenAtLogin(true);
-                    host.settings
-                      .setOpenAtLogin(value)
-                      .then(refreshOpenAtLogin)
-                      .catch((error) => {
-                        showError(error);
-                        return refreshOpenAtLogin().catch(showError);
-                      })
-                      .finally(() => setSavingOpenAtLogin(false));
+                <Icon name="warning_amber" size={16} />
+                <div className={styles.rowText}>
+                  <span className="settings-row-label">{t("Disable Deprecated Warnings")}</span>
+                  <span className="hint">{t("Do not show warnings about usages of deprecated features.")}</span>
+                </div>
+                <Switch
+                  label={t("Disable Deprecated Warnings")}
+                  value={disableWarnings}
+                  onChange={(value) => {
+                    setDisableWarnings(value);
+                    saveDisableDeprecatedWarnings(value);
                   }}
                 />
               </div>
-              <div className="settings-row">
-                <span className="settings-row-label">{t("Enable Tray")}</span>
-                <button
-                  type="button"
-                  className={settings.trayEnabled ? "switch on" : "switch"}
-                  role="switch"
-                  aria-checked={settings.trayEnabled}
-                  aria-label={t("Enable Tray")}
-                  onClick={() => {
-                    const value = !settings.trayEnabled;
-                    setSettings({
-                      ...settings,
-                      trayEnabled: value,
-                    });
-                    host.settings.setTrayEnabled(value).catch(showError);
-                  }}
-                />
+            </div>
+          </div>
+          {forceRelaySupported && (
+            <div>
+              <div className="list-section-title">Tailscale</div>
+              <div className={styles.settingsList}>
+                <ForceRelayRow />
               </div>
-              {settings.trayEnabled && (
+            </div>
+          )}
+          <div>
+            <div className="list-section-title">{t("Connection")}</div>
+            <div className="nav-list">
+              <NavRow icon="router" title={t("Servers")} onClick={() => navigate("settings/servers")} />
+            </div>
+          </div>
+        </div>
+        <div className="settings-stack">
+          <div>
+            <div className="list-section-title">{t("Core")}</div>
+            <div className={styles.settingsList}>
+              <div className="settings-row" {...versionMenu.triggerProps}>
+                <span className="settings-row-label">{t("Version")}</span>
+                <span className="nav-row-detail mono">{serverInfo?.version ?? "…"}</span>
+                {versionMenu.element}
+              </div>
+              <div className="settings-row">
+                <span className="settings-row-label">{t("API Version")}</span>
+                <span className="nav-row-detail mono">{serverInfo?.apiVersion ?? "…"}</span>
+              </div>
+              {startedAt !== null && (
                 <div className="settings-row">
-                  <span className="settings-row-label">{t("Keep Tray in Background")}</span>
-                  <button
-                    type="button"
-                    className={settings.trayInBackground ? "switch on" : "switch"}
-                    role="switch"
-                    aria-checked={settings.trayInBackground}
-                    aria-label={t("Keep Tray in Background")}
-                    onClick={() => {
-                      const value = !settings.trayInBackground;
-                      setSettings({ ...settings, trayInBackground: value });
-                      host.settings.setTrayInBackground(value).catch(showError);
-                    }}
-                  />
+                  <span className="settings-row-label">{t("Started at")}</span>
+                  <span className="nav-row-detail">{formatDateTime(startedAt, language)}</span>
                 </div>
               )}
               <div className="settings-row">
-                <span className="settings-row-label">{t("Cache Size")}</span>
-                {cacheSize === null ? (
-                  <Spinner />
-                ) : (
-                  <span className="nav-row-detail">{formatBytes(cacheSize)}</span>
-                )}
+                <div className={styles.rowText}>
+                  <span className="settings-row-label">{t("Extensions")}</span>
+                  <span className="hint">
+                    {extensionNames.length > 0
+                      ? t("Features of the fl0w1nd/sing-box fork served by this core.")
+                      : t("This core does not serve the extended API; fork features are hidden.")}
+                  </span>
+                </div>
               </div>
-              {cacheSize !== null && cacheSize > 0 && (
-                <button
-                  type="button"
-                  className={cx("settings-row", styles.destructiveRow)}
-                  disabled={clearing}
-                  onClick={clearCache}
-                >
-                  <span className="settings-row-label">{t("Clear Cache")}</span>
-                  {clearing && <Spinner />}
-                </button>
-              )}
+              {extensionNames.map((name) => (
+                <div key={name} className="settings-row">
+                  <span className={cx("settings-row-label", styles.extensionName)}>
+                    {EXTENSION_LABELS[name] ? t(EXTENSION_LABELS[name]) : name}
+                  </span>
+                  <span className="badge outline">
+                    {name} v{extensions.versions[name as keyof typeof extensions.versions]}
+                  </span>
+                </div>
+              ))}
             </div>
-            <UpdateSettingsSection host={host} />
-            <div>
-              <div className="list-section-title">Tailscale</div>
-              <div className="nav-list">
-                <NavRow
-                  icon="terminal"
-                  title={t("Terminal Configuration")}
-                  onClick={() => navigate("settings/preferences/terminal")}
-                />
-              </div>
+          </div>
+          <div>
+            <div className="list-section-title">{t("About")}</div>
+            <div className="nav-list">
+              <NavRow
+                icon="description"
+                title={t("Documentation")}
+                href="https://sing-box.sagernet.org"
+              />
+              <NavRow
+                icon="code"
+                title={t("Core source code")}
+                detail="fl0w1nd/sing-box"
+                href="https://github.com/fl0w1nd/sing-box"
+              />
+              <NavRow
+                icon="code"
+                title={t("Dashboard source code")}
+                detail="fl0w1nd/sing-box-dashboard"
+                href="https://github.com/fl0w1nd/sing-box-dashboard"
+              />
             </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
-function UpdateSettingsSection({ host }: { host: DesktopHost }) {
+export function ForceRelayRow() {
+  const api = useApi();
   const { t } = useI18n();
-  const updates = useUpdatesState(host);
-  const [noUpdatesVisible, setNoUpdatesVisible] = useState(false);
-  const [githubTokenVisible, setGitHubTokenVisible] = useState(false);
-  const [githubToken, setGitHubToken] = useState("");
-  const [githubTokenLoading, setGitHubTokenLoading] = useState(false);
-  const [githubTokenSaving, setGitHubTokenSaving] = useState(false);
-
-  if (updates === null || !updates.supported) {
-    return null;
-  }
-
-  const checkNow = () => {
-    host.updates
-      .check()
-      .then((info) => {
-        if (info !== null) {
-          openUpdateDialog();
-        } else {
-          setNoUpdatesVisible(true);
-        }
-      })
-      .catch(showError);
-  };
-
-  const editGitHubToken = () => {
-    setGitHubToken("");
-    setGitHubTokenVisible(true);
-    setGitHubTokenLoading(true);
-    host.updates
-      .getGitHubToken()
-      .then(setGitHubToken)
-      .catch((error) => {
-        setGitHubTokenVisible(false);
-        showError(error);
-      })
-      .finally(() => setGitHubTokenLoading(false));
-  };
-
-  const saveGitHubToken = () => {
-    setGitHubTokenSaving(true);
-    host.updates
-      .setGitHubToken(githubToken)
-      .then(() => setGitHubTokenVisible(false))
-      .catch(showError)
-      .finally(() => setGitHubTokenSaving(false));
-  };
-
-  const githubTokenBusy = githubTokenLoading || githubTokenSaving;
-
+  const status = useStream(api.extended.forceRelay);
+  const [enabled, setPending] = usePendingValue(status.data.enabled);
   return (
-    <div>
-      <div className="list-section-title">{t("Update")}</div>
-      <div className={styles.settingsList}>
-        <div className="settings-row">
-          <span className="settings-row-label">{t("Update Track")}</span>
-          <Select<DesktopUpdateTrack>
-            inline
-            options={[
-              { value: "stable", label: t("Stable") },
-              { value: "beta", label: t("Beta") },
-            ]}
-            value={updates.track}
-            onChange={(track) => {
-              void host.updates.setTrack(track).catch(showError);
-            }}
-          />
-        </div>
-        <button type="button" className="settings-row" onClick={editGitHubToken}>
-          <span className="settings-row-label">{t("GitHub Token")}</span>
-          <Icon name="keyboard_arrow_right" size={14} />
-        </button>
-        <div className="settings-row">
-          <span className="settings-row-label">{t("Automatic Update Check")}</span>
-          <button
-            type="button"
-            className={updates.checkUpdateEnabled ? "switch on" : "switch"}
-            role="switch"
-            aria-checked={updates.checkUpdateEnabled}
-            aria-label={t("Automatic Update Check")}
-            onClick={() => {
-              void host.updates
-                .setCheckUpdateEnabled(!updates.checkUpdateEnabled)
-                .catch(showError);
-            }}
-          />
-        </div>
-        <button
-          type="button"
-          className="settings-row"
-          disabled={updates.checking}
-          onClick={checkNow}
-        >
-          <span className="settings-row-label">{t("Check Update")}</span>
-          {updates.checking && <Spinner />}
-        </button>
-        {updates.info !== null && (
-          <button type="button" className="settings-row" onClick={openUpdateDialog}>
-            <span className="settings-row-label">
-              {t("New version available: {version}", { version: updates.info.versionName })}
-            </span>
-            <Icon name="keyboard_arrow_right" size={14} />
-          </button>
-        )}
+    <div className="settings-row">
+      <Icon name="relay" size={16} />
+      <div className={styles.rowText}>
+        <span className="settings-row-label">{t("Force DERP relay")}</span>
+        <span className="hint">
+          {t("Reach every peer only through DERP relays, for all Tailscale endpoints. Kept across restarts.")}
+        </span>
       </div>
-      {noUpdatesVisible && (
-        <Dialog onClose={() => setNoUpdatesVisible(false)}>
-          <h3>{t("Check Update")}</h3>
-          <p className="dialog-message">{t("No updates available")}</p>
-          <div className="row-actions dialog-actions">
-            <Button variant="primary" onClick={() => setNoUpdatesVisible(false)}>
-              {t("Ok")}
-            </Button>
-          </div>
-        </Dialog>
-      )}
-      {githubTokenVisible && (
-        <Dialog
-          onClose={() => {
-            if (!githubTokenBusy) {
-              setGitHubTokenVisible(false);
-            }
-          }}
-        >
-          <h3>{t("GitHub Token")}</h3>
-          {githubTokenLoading ? (
-            <Spinner />
-          ) : (
-            <Field label={t("GitHub Token")}>
-              <SecretInput
-                value={githubToken}
-                placeholder={t("Get higher GitHub API rate limits")}
-                disabled={githubTokenSaving}
-                onChange={setGitHubToken}
-              />
-            </Field>
-          )}
-          <div className="row-actions dialog-actions">
-            <Button disabled={githubTokenBusy} onClick={() => setGitHubTokenVisible(false)}>
-              {t("Cancel")}
-            </Button>
-            <Button
-              variant="primary"
-              disabled={githubTokenBusy}
-              onClick={saveGitHubToken}
-            >
-              {t("Save")}
-            </Button>
-          </div>
-        </Dialog>
-      )}
+      <Switch
+        label={t("Force DERP relay")}
+        value={enabled}
+        disabled={!status.data.loaded}
+        onChange={(value) => {
+          setPending(value);
+          api.extended.setForceRelay(value).catch((error: unknown) => {
+            setPending(null);
+            showError(error);
+          });
+        }}
+      />
     </div>
   );
 }
@@ -470,257 +232,6 @@ function SettingsPageHeader(props: {
       actions={props.action}
       back={{ label: props.backLabel ?? t("Settings"), onClick: () => navigate(back) }}
     />
-  );
-}
-
-export function CoreView() {
-  const host = useLocalDesktopHost();
-  if (host === null) {
-    return null;
-  }
-  return <CoreViewContent host={host} />;
-}
-
-function CoreViewContent({ host }: { host: DesktopHost }) {
-  const { t } = useI18n();
-  const api = useApi();
-  const serviceStatus = useStream(api.serviceStatus);
-  const [coreVersion, setCoreVersion] = useState<string | null>(null);
-  const [securitySettings, setSecuritySettings] = useState<{
-    available: boolean;
-    insecureModeEnabled: boolean;
-  } | null>(null);
-  const [savingInsecureMode, setSavingInsecureMode] = useState(false);
-  const [dataSize, setDataSize] = useState<number | "unavailable" | null>(null);
-  const [disableWarnings, setDisableWarnings] = useState(loadDisableDeprecatedWarnings);
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const copyMenu = useContextMenu(
-    <MenuItem
-      icon="content_copy"
-      onSelect={() => {
-        void navigator.clipboard.writeText(coreVersion ?? "").catch(showError);
-      }}
-    >
-      {t("Copy")}
-    </MenuItem>,
-  );
-
-  const running =
-    serviceStatus.data.status?.status === ServiceStatus_Type.STARTED ||
-    serviceStatus.data.status?.status === ServiceStatus_Type.STARTING;
-
-  const loadInfo = useCallback(() => {
-    setCoreVersion(null);
-    host.core
-      .info()
-      .then((value) => setCoreVersion(value.version))
-      .catch(showError);
-  }, [host]);
-
-  useEffect(() => {
-    loadInfo();
-  }, [loadInfo]);
-
-  const refreshSecuritySettings = useCallback(
-    () => host.core.securitySettings().then(setSecuritySettings),
-    [host],
-  );
-
-  useEffect(() => {
-    refreshSecuritySettings().catch(showError);
-  }, [refreshSecuritySettings]);
-
-  const refreshSize = useCallback(() => {
-    setDataSize(null);
-    host.core
-      .workingDirectory()
-      .then((value) => setDataSize(value.size))
-      .catch(() => setDataSize("unavailable"));
-  }, [host]);
-
-  useEffect(() => {
-    refreshSize();
-  }, [refreshSize]);
-
-  const destroy = () => {
-    setBusy(true);
-    host.core
-      .destroyWorkingDirectory()
-      .then(() => {
-        setConfirming(false);
-        loadInfo();
-        refreshSize();
-      })
-      .catch(showError)
-      .finally(() => setBusy(false));
-  };
-
-  return (
-    <div className="page">
-      <SettingsPageHeader title={t("Core")} />
-      <div className="settings-stack">
-        {coreVersion === null ? (
-          <Spinner />
-        ) : (
-          <>
-            <div className={styles.settingsList}>
-              <div className="settings-row" {...copyMenu.triggerProps}>
-                <span className="settings-row-label">{t("Version")}</span>
-                <span className="nav-row-detail">{coreVersion}</span>
-                {copyMenu.element}
-              </div>
-              <div className="settings-row">
-                <span className="settings-row-label">{t("Data Size")}</span>
-                {dataSize === null ? (
-                  <Spinner />
-                ) : dataSize === "unavailable" ? (
-                  <span className={styles.fieldError}>{t("Unavailable")}</span>
-                ) : (
-                  <span className="nav-row-detail">{formatBytes(dataSize)}</span>
-                )}
-              </div>
-            </div>
-            {securitySettings?.available && (
-              <div>
-                <div className="list-section-title">{t("Security")}</div>
-                <div className={styles.settingsList}>
-                  <div className="settings-row">
-                    <div className={styles.rowText}>
-                      <span className="settings-row-label">{t("Insecure Mode")}</span>
-                      <span className="hint">
-                        {t("Allow configurations to use privileges unrelated to networking.")}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className={securitySettings.insecureModeEnabled ? "switch on" : "switch"}
-                      role="switch"
-                      aria-checked={securitySettings.insecureModeEnabled}
-                      aria-label={t("Insecure Mode")}
-                      disabled={savingInsecureMode}
-                      onClick={() => {
-                        const enabled = !securitySettings.insecureModeEnabled;
-                        setSecuritySettings({ ...securitySettings, insecureModeEnabled: enabled });
-                        setSavingInsecureMode(true);
-                        host.core
-                          .setInsecureModeEnabled(enabled)
-                          .then(refreshSecuritySettings)
-                          .catch((error) => {
-                            showError(error);
-                            return refreshSecuritySettings().catch(showError);
-                          })
-                          .finally(() => setSavingInsecureMode(false));
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-            {coreVersion.includes("-") && (
-              <div>
-                <div className="list-section-title">{t("Beta Settings")}</div>
-                <div className={styles.settingsList}>
-                  <div className="settings-row">
-                    <div className={styles.rowText}>
-                      <span className="settings-row-label">{t("Disable Deprecated Warnings")}</span>
-                      <span className="hint">
-                        {t("Do not show warnings about usages of deprecated features.")}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      className={disableWarnings ? "switch on" : "switch"}
-                      role="switch"
-                      aria-checked={disableWarnings}
-                      aria-label={t("Disable Deprecated Warnings")}
-                      onClick={() => {
-                        const value = !disableWarnings;
-                        setDisableWarnings(value);
-                        saveDisableDeprecatedWarnings(value);
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-            <div>
-              <div className="list-section-title">{t("Working Directory")}</div>
-              <div className={styles.settingsList}>
-                <button
-                  type="button"
-                  className={cx("settings-row", styles.destructiveRow)}
-                  disabled={busy}
-                  onClick={() => (running ? setConfirming(true) : destroy())}
-                >
-                  <span className="settings-row-label">{t("Destroy")}</span>
-                  {busy && !confirming && <Spinner />}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-      {confirming && (
-        <Dialog onClose={() => (busy ? undefined : setConfirming(false))}>
-          <h3>{t("Service is Running")}</h3>
-          <p className="dialog-message">
-            {t("The service must be stopped before destroying the working directory.")}
-          </p>
-          <div className="row-actions dialog-actions">
-            <Button onClick={() => setConfirming(false)} disabled={busy}>
-              {t("Cancel")}
-            </Button>
-            <Button variant="danger" onClick={destroy} disabled={busy}>
-              {busy ? <Spinner /> : t("Stop Service and Continue")}
-            </Button>
-          </div>
-        </Dialog>
-      )}
-    </div>
-  );
-}
-
-export function PreferencesView(props: {
-  theme: ThemePreference;
-  onThemeChange: (theme: ThemePreference) => void;
-  accent: AccentPreference;
-  onAccentChange: (accent: AccentPreference) => void;
-}) {
-  const { t } = useI18n();
-  return (
-    <div className="page">
-      <SettingsPageHeader title={t("Preferences")} />
-      <div className="settings-stack">
-        <div className={styles.settingsList}>
-          <div className="settings-row">
-            <Icon name="brightness_auto" size={15} />
-            <span className="settings-row-label">{t("Appearance")}</span>
-            <ThemeSelect theme={props.theme} onChange={props.onThemeChange} />
-          </div>
-          <div className="settings-row">
-            <Icon name="palette" size={15} />
-            <span className="settings-row-label">{t("Theme")}</span>
-            <ThemeMenu accent={props.accent} onChange={props.onAccentChange} />
-          </div>
-          <div className="settings-row">
-            <Icon name="language" size={15} />
-            <span className="settings-row-label">{t("Language")}</span>
-            <LanguageSelect />
-          </div>
-        </div>
-        <div>
-          <div className="list-section-title">Tailscale</div>
-          <div className="nav-list">
-            <NavRow
-              icon="terminal"
-              title={t("Terminal Configuration")}
-              onClick={() => navigate("settings/preferences/terminal")}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -817,7 +328,6 @@ function ThemeSchemeSection(props: {
 
 export function TerminalConfigurationView() {
   const { t } = useI18n();
-  const host = useDesktopHost();
   const [config, setConfig] = useState<TerminalConfig>(loadTerminalConfig);
 
   const update = (patch: Partial<TerminalConfig>) => {
@@ -830,8 +340,8 @@ export function TerminalConfigurationView() {
     <div className="page">
       <SettingsPageHeader
         title={t("Terminal Configuration")}
-        back={host !== null ? "settings/app" : "settings/preferences"}
-        backLabel={host !== null ? t("App") : t("Preferences")}
+        back="settings"
+        backLabel={t("Settings")}
       />
       <div className="settings-stack">
         <ThemeSchemeSection
@@ -1053,7 +563,6 @@ export function ServersView(props: {
   onServersChange: (state: ServersState) => void;
 }) {
   const { t } = useI18n();
-  const host = useDesktopHost();
   const { servers } = props.serversState;
   const [editing, setEditing] = useState<Server | "new" | null>(null);
 
@@ -1070,7 +579,7 @@ export function ServersView(props: {
   return (
     <div className="page">
       <SettingsPageHeader
-        title={host !== null ? t("Remote Control") : t("Servers")}
+        title={t("Servers")}
         action={
           <IconButton
             aria-label={t("New Server")}
@@ -1082,7 +591,6 @@ export function ServersView(props: {
         }
       />
       <div>
-        {host !== null && <div className="list-section-title">{t("Servers")}</div>}
         <div className="nav-list">
           {servers.length === 0 ? (
             <div className={styles.emptyRow}>{t("No servers")}</div>

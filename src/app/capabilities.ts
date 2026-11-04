@@ -1,3 +1,4 @@
+import type { ExtensionCapabilities, ExtensionName } from "../api/extended";
 import { createContext, useContext } from "react";
 
 export const MIN_API_VERSION = {
@@ -24,4 +25,14 @@ export const CapabilitiesContext = createContext<ServerCapabilities>(makeCapabil
 
 export function useSupportsCapability(capability: Capability): boolean {
   return useContext(CapabilitiesContext).supports(capability);
+}
+
+export const ExtensionsContext = createContext<ExtensionCapabilities>({ ready: false, versions: {} });
+
+export function useExtension(name: ExtensionName): boolean {
+  return useContext(ExtensionsContext).versions[name] !== undefined;
+}
+
+export function useExtensions(): ExtensionCapabilities {
+  return useContext(ExtensionsContext);
 }
