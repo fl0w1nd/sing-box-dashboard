@@ -1,0 +1,10 @@
+version: v2
+inputs:
+  - directory: proto
+    paths:
+      - proto/daemon/started_service.proto
+      - proto/daemon/extended_service.proto
+plugins:
+  - local: protoc-gen-es
+    out: src/gen
+    opt: target=ts

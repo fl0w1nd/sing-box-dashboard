@@ -1,0 +1,83 @@
+.qr-copy {
+  display: flex;
+  justify-content: center;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.peer-list {
+  overflow: hidden;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.peer-item {
+  display: flex;
+  align-items: center;
+}
+
+.peer-item + .peer-item {
+  border-top: 1px solid var(--border);
+}
+
+.peer-item-drop-target {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.peer-item-main {
+  display: flex;
+  flex: 1;
+  gap: var(--space-10);
+  align-items: center;
+  min-width: 0;
+  padding: var(--space-12) var(--space-14);
+  font-size: var(--text-base);
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+}
+
+.peer-item-main:hover {
+  background: var(--hover);
+}
+
+.peer-menu {
+  margin-inline-end: var(--space-8);
+}
+
+.peer-menu :global(.icon-button) {
+  width: 26px;
+  height: 26px;
+}
+
+.drop-zone {
+  display: flex;
+  gap: var(--space-8);
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: var(--space-16) var(--space-14);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.drop-zone:hover {
+  background: linear-gradient(var(--hover), var(--hover)) var(--card);
+}
+
+.drop-zone-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}

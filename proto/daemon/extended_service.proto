@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+package daemon;
+option go_package = "github.com/sagernet/sing-box/daemon";
+
+import "google/protobuf/empty.proto";
+
+service ExtendedService {
+  rpc GetCapabilities(google.protobuf.Empty) returns (ExtensionCapabilities) {}
+  rpc SetTailscaleForceRelay(SetTailscaleForceRelayRequest) returns (google.protobuf.Empty) {}
+  rpc SubscribeTailscaleForceRelayStatus(google.protobuf.Empty) returns (stream TailscaleForceRelayStatus) {}
+  rpc SubscribeOutboundProviders(google.protobuf.Empty) returns (stream OutboundProviderStatusUpdate) {}
+  rpc UpdateOutboundProvider(OutboundProviderRequest) returns (google.protobuf.Empty) {}
+  rpc GetDNSQueryLogStatus(google.protobuf.Empty) returns (DNSQueryLogStatus) {}
+  rpc QueryDNSQueryLog(DNSQueryLogRequest) returns (DNSQueryLogPage) {}
+  rpc GetDNSQueryLogStats(DNSQueryLogStatsRequest) returns (DNSQueryLogStats) {}
+  rpc SubscribeDNSQueryLog(DNSQueryLogRequest) returns (stream DNSQueryLogEntry) {}
+  rpc ClearDNSQueryLog(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+  rpc ClearDNSCache(google.protobuf.Empty) returns (google.protobuf.Empty) {}
+}
+
+message ExtensionCapabilities {
+  repeated ExtensionCapability capabilities = 1;
+}
+
+message ExtensionCapability {
+  string name = 1;
+  int32 version = 2;
+}
+
+// Force relay is process-wide: it applies to every Tailscale endpoint.
+message SetTailscaleForceRelayRequest {
+  bool enabled = 1;
+}
+
+message TailscaleForceRelayStatus {
+  bool enabled = 1;
+}
+
+message OutboundProviderRequest {
+  string tag = 1;
+}
+
+message OutboundProviderStatusUpdate {
+  repeated OutboundProviderStatus providers = 1;
+}
+
+message OutboundProviderStatus {
+  string tag = 1;
+  string type = 2;
+  int64 updatedAt = 3;
+  bool updating = 4;
+  string lastError = 5;
+  OutboundProviderSubscriptionInfo subscriptionInfo = 6;
+  repeated OutboundProviderItem items = 7;
+}
+
+message OutboundProviderSubscriptionInfo {
+  int64 upload = 1;
+  int64 download = 2;
+  int64 total = 3;
+  int64 expireTime = 4;
+}
+
+message OutboundProviderItem {
+  string tag = 1;
+  string type = 2;
+  int64 urlTestTime = 3;
+  int32 urlTestDelay = 4;
+}
+
+message DNSQueryLogStatus {
+  bool enabled = 1;
+  bool persistent = 2;
+  string path = 3;
+  // Seconds.
+  int64 retention = 4;
+  int64 maxSize = 5;
+  int64 diskUsage = 6;
+  int32 segments = 7;
+  int32 memoryEntries = 8;
+  int32 pendingEntries = 9;
+}
+
+// Empty fields match everything. Queries return entries newest first;
+// subscriptions ignore before and limit.
+message DNSQueryLogRequest {
+  // Matches the domain, source, process or answers, case-insensitive.
+  string search = 1;
+  string queryType = 2;
+  string status = 3;
+  string server = 4;
+  string inbound = 5;
+  // Unix milliseconds.
+  int64 since = 6;
+  int64 until = 7;
+  // Returns entries with an ID below this cursor when not zero.
+  uint64 before = 8;
+  int32 limit = 9;
+}
+
+message DNSQueryLogPage {
+  repeated DNSQueryLogEntry entries = 1;
+  // Cursor for the next page, or zero when there is none.
+  uint64 next = 2;
+}
+
+message DNSQueryLogEntry {
+  uint64 id = 1;
+  // Unix milliseconds.
+  int64 time = 2;
+  // Microseconds.
+  int64 duration = 3;
+  string method = 4;
+  string domain = 5;
+  string queryType = 6;
+  string inbound = 7;
+  string inboundType = 8;
+  string source = 9;
+  string user = 10;
+  string process = 11;
+  string outbound = 12;
+  string destination = 13;
+  repeated DNSQueryLogRule rules = 14;
+  repeated DNSQueryLogUpstream upstreams = 15;
+  bool cached = 16;
+  bool optimistic = 17;
+  bool rejected = 18;
+  string status = 19;
+  string rcode = 20;
+  repeated string answers = 21;
+  uint32 ttl = 22;
+  string error = 23;
+}
+
+message DNSQueryLogRule {
+  int32 index = 1;
+  string rule = 2;
+  string action = 3;
+  string actionType = 4;
+}
+
+message DNSQueryLogUpstream {
+  string server = 1;
+  string type = 2;
+  string queryType = 3;
+  // Microseconds.
+  int64 duration = 4;
+  string rcode = 5;
+  string error = 6;
+  bool rejected = 7;
+  repeated string answers = 8;
+  // The configured address, such as https://dns.google/dns-query, or the
+  // addresses a local or dhcp server used.
+  string address = 9;
+  // The configured detour, or the endpoint of a tailscale server.
+  string detour = 10;
+}
+
+message DNSQueryLogStatsRequest {
+  // Selects the entries as in queries; before and limit are ignored.
+  DNSQueryLogRequest filter = 1;
+  // Seconds; zero picks one hour. It grows when the range would need more
+  // than 1000 buckets.
+  int64 bucket = 2;
+  // Entries in each ranking; zero picks 10, at most 100.
+  int32 top = 3;
+}
+
+message DNSQueryLogStats {
+  int64 total = 1;
+  map<string, int64> statuses = 2;
+  // Seconds, the bucket length used.
+  int64 bucket = 3;
+  // From since, or the oldest entry, to until, or now, empty buckets
+  // included. Buckets start at a multiple of the bucket length in Unix time.
+  repeated DNSQueryLogStatsBucket buckets = 4;
+  repeated DNSQueryLogStatsCount topDomains = 5;
+  // Domains answered by a reject or predefined rule.
+  repeated DNSQueryLogStatsCount topBlockedDomains = 6;
+  // Source addresses without the port; entries without a source, such as
+  // background refreshes, are left out.
+  repeated DNSQueryLogStatsCount topClients = 7;
+  // Every query type of an entry counts, so a lookup of A and AAAA counts
+  // for both.
+  repeated DNSQueryLogStatsCount queryTypes = 8;
+  repeated DNSQueryLogUpstreamStats upstreams = 9;
+  // Of all entries.
+  DNSQueryLogDuration duration = 10;
+  // Of entries with the upstream status.
+  DNSQueryLogDuration upstreamDuration = 11;
+}
+
+message DNSQueryLogStatsBucket {
+  // Unix milliseconds, the start of the bucket.
+  int64 time = 1;
+  int64 total = 2;
+  map<string, int64> statuses = 3;
+}
+
+message DNSQueryLogStatsCount {
+  string key = 1;
+  int64 count = 2;
+}
+
+message DNSQueryLogUpstreamStats {
+  string server = 1;
+  string type = 2;
+  int64 exchanges = 3;
+  int64 failed = 4;
+  int64 rejected = 5;
+  // Of the exchanges that did not fail.
+  DNSQueryLogDuration duration = 6;
+  // Of the newest exchange.
+  string address = 7;
+  string detour = 8;
+}
+
+// Microseconds; p95 is the 95th percentile by the nearest rank.
+message DNSQueryLogDuration {
+  int64 average = 1;
+  int64 p95 = 2;
+}
