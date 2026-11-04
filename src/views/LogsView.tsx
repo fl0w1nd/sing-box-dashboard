@@ -11,7 +11,7 @@ import { useI18n } from "../app/i18n";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamErrorBanner } from "../components/StreamBanner";
-import { EmptyState, IconButton, MenuItem, OthersMenu, SearchInput, Spinner, SubMenu } from "../components/ui";
+import { EmptyState, IconButton, MenuItem, OthersMenu, SearchInput, Spinner, SubMenu, useCopy } from "../components/ui";
 import { LogLevel } from "../gen/daemon/started_service_pb";
 import { ansiColorCss, parseAnsi, parseCssColor, stripAnsi, type Rgb } from "../lib/ansi";
 import { canShare, shareError, shareFile } from "../lib/sharing";
@@ -62,24 +62,48 @@ export function LogsView() {
   const logs = useStream(api.logs);
   const outage = useStreamOutage(logs, isTerminalCode(logs.errorCode));
   const [level, setLevel] = useState<LogLevel | null>(null);
-  const [paused, setPaused] = useState(false);
+  // "manual" comes from the header button; "scroll" from reading back up
+  // the log, which lifts again on its own at the bottom.
+  const [paused, setPausedReason] = useState<"manual" | "scroll" | null>(null);
   const [frozen, setFrozen] = useState<LogEntry[]>([]);
   const [search, setSearch] = useState("");
   const viewRef = useRef<HTMLDivElement>(null);
   const background = useLogBackground();
+  const [, copy] = useCopy();
 
   const effectiveLevel = level ?? logs.data.defaultLevel ?? LogLevel.INFO;
 
-  const togglePause = () => {
-    if (paused) {
-      setPaused(false);
-    } else {
+  const pause = (reason: "manual" | "scroll") => {
+    if (paused === null) {
       setFrozen(logs.data.entries);
-      setPaused(true);
+    }
+    setPausedReason(reason);
+  };
+
+  const togglePause = () => {
+    if (paused !== null) {
+      setPausedReason(null);
+    } else {
+      pause("manual");
     }
   };
 
-  const sourceEntries = paused ? frozen : logs.data.entries;
+  const onScroll = () => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    const distance = view.scrollHeight - view.scrollTop - view.clientHeight;
+    if (distance > 32 && paused === null) {
+      pause("scroll");
+    } else if (distance <= 4 && paused === "scroll") {
+      setPausedReason(null);
+    }
+  };
+
+  const sourceEntries = paused !== null ? frozen : logs.data.entries;
+  const lastFrozenId = frozen.length > 0 ? frozen[frozen.length - 1].id : -1;
+  const unseen = paused !== null ? logs.data.entries.filter((entry) => entry.id > lastFrozenId).length : 0;
 
   const filtered = useMemo(() => {
     let entries = sourceEntries.filter((entry) => entry.level <= effectiveLevel);
@@ -116,7 +140,7 @@ export function LogsView() {
   };
 
   useLayoutEffect(() => {
-    if (paused) {
+    if (paused !== null) {
       return;
     }
     const view = viewRef.current;
@@ -128,15 +152,23 @@ export function LogsView() {
   let body: ReactNode;
   if (sourceEntries.length > 0 && outage === null) {
     body = (
-      <div className={styles.logView} ref={viewRef}>
-        {visible.map((entry) => (
-          <LogLine
-            key={entry.id}
-            message={entry.message}
-            highlight={search.trim()}
-            background={background}
-          />
-        ))}
+      <div className={styles.logWrap}>
+        <div className={styles.logView} ref={viewRef} onScroll={onScroll}>
+          {visible.map((entry) => (
+            <LogLine
+              key={entry.id}
+              message={entry.message}
+              highlight={search.trim()}
+              background={background}
+            />
+          ))}
+        </div>
+        {paused !== null && (
+          <button type="button" className={styles.jump} onClick={() => setPausedReason(null)}>
+            <Icon name="arrow_downward" size={13} />
+            {unseen > 0 ? t("Back to latest · {count} new", { count: unseen }) : t("Back to latest")}
+          </button>
+        )}
       </div>
     );
   } else if (outage !== null) {
@@ -158,11 +190,11 @@ export function LogsView() {
         actions={
           <>
             <IconButton
-              active={paused}
-              title={paused ? t("Resume scrolling") : t("Pause scrolling")}
+              active={paused !== null}
+              title={paused !== null ? t("Resume scrolling") : t("Pause scrolling")}
               onClick={togglePause}
             >
-              <Icon name={paused ? "play_arrow" : "pause"} />
+              <Icon name={paused !== null ? "play_arrow" : "pause"} />
             </IconButton>
             <OthersMenu>
               <SubMenu label={t("Log Level")} icon="filter_list">
@@ -182,7 +214,7 @@ export function LogsView() {
               <SubMenu label={t("Save")} icon="save">
                 <MenuItem
                   icon="content_copy"
-                  onSelect={() => void navigator.clipboard.writeText(logsText()).catch(showError)}
+                  onSelect={() => copy(logsText())}
                 >
                   {t("To Clipboard")}
                 </MenuItem>

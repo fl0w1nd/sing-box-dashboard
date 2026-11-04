@@ -1,8 +1,16 @@
+.log-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .log-view {
   composes: text-mono-caption from global;
   flex: 1;
   min-height: 0;
-  padding: var(--space-12) var(--space-14);
+  padding: var(--space-8) var(--space-6);
   overflow-y: auto;
   overscroll-behavior: none;
   line-height: 1.65;
@@ -13,12 +21,48 @@
   border-radius: var(--radius-card);
 }
 
-:global(.page):not(:global(.page-full)) .log-view {
+:global(.page):not(:global(.page-full)) .log-wrap {
   height: calc(100vh - 170px);
 }
 
 .log-line {
   display: block;
+  padding: var(--space-px) var(--space-8);
+  padding-inline-start: calc(var(--space-8) + 2ch);
+  text-indent: -2ch;
+  border-radius: var(--radius-xs);
+}
+
+.log-line:hover {
+  background: var(--hover);
+}
+
+.jump {
+  position: absolute;
+  bottom: var(--space-16);
+  left: 50%;
+  display: inline-flex;
+  gap: var(--space-6);
+  align-items: center;
+  height: var(--control-height);
+  padding: 0 var(--space-14);
+  font-size: var(--text-sm);
+  color: var(--bright);
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--ink);
+  border: 0;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-overlay);
+  transform: translateX(-50%);
+  animation: jump-in var(--transition-medium);
+}
+
+@keyframes jump-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
 }
 
 .log-line mark {
@@ -33,7 +77,7 @@
 }
 
 @media (max-width: 720px) {
-  :global(.page):not(:global(.page-full)) .log-view {
-      height: calc(100dvh - 230px);
-    }
+  :global(.page):not(:global(.page-full)) .log-wrap {
+    height: calc(100dvh - 230px);
+  }
 }

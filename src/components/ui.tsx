@@ -5,6 +5,7 @@ import { encode as encodeQR } from "uqr";
 import type { DelayTone } from "../api/format";
 import { useIsMobile } from "../app/context";
 import { showError } from "../app/errorStore";
+import { showToast, useToast } from "../app/toastStore";
 import { useDismiss } from "../app/hooks";
 import { useI18n } from "../app/i18n";
 import { useLatestRef } from "../app/useLatest";
@@ -69,6 +70,10 @@ export function StateDot(props: { tone?: DelayTone; className?: string }) {
 
 export function Spinner(props: { className?: string }) {
   return <span className={cx("spinner", props.className)} />;
+}
+
+export function LoadingBar(props: { active: boolean }) {
+  return props.active ? <span className="loading-bar" role="progressbar" aria-busy="true" /> : null;
 }
 
 export function Brand(props: { className?: string; product?: string | null }) {
@@ -730,17 +735,118 @@ export function Field(props: { label: ReactNode; children: ReactElement<{ id?: s
   );
 }
 
-export function SearchInput(props: { value: string; onChange: (value: string) => void }) {
+export function SearchInput(props: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  busy?: boolean;
+}) {
   const { t } = useI18n();
+  const ref = useRef<HTMLInputElement>(null);
+  const onChange = useLatestRef(props.onChange);
+  // "/" focuses the first search field on the page, as on most sites.
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+      const target = event.target as HTMLElement | null;
+      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) {
+        return;
+      }
+      const input = ref.current;
+      if (!input || document.querySelector(".search-input input") !== input) {
+        return;
+      }
+      event.preventDefault();
+      input.focus();
+      input.select();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
   return (
-    <div className="search-input">
-      <Icon name="search" size={14} />
+    <div className="search-input" aria-busy={props.busy || undefined}>
+      {props.busy ? <Spinner className="search-spinner" /> : <Icon name="search" size={14} />}
       <input
+        ref={ref}
         className="input"
-        placeholder={t("Search")}
+        placeholder={props.placeholder ?? t("Search")}
         value={props.value}
         onChange={(event) => props.onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            if (props.value !== "") {
+              event.stopPropagation();
+              onChange.current("");
+            } else {
+              event.currentTarget.blur();
+            }
+          }
+        }}
       />
+      {props.value !== "" ? (
+        <button
+          type="button"
+          className="search-clear"
+          aria-label={t("Clear")}
+          title={t("Clear")}
+          onClick={() => {
+            onChange.current("");
+            ref.current?.focus();
+          }}
+        >
+          <Icon name="close" size={12} />
+        </button>
+      ) : (
+        <kbd className="search-key" aria-hidden="true">
+          /
+        </kbd>
+      )}
+    </div>
+  );
+}
+
+// Copies text and confirms it: the returned flag stays true for a moment so
+// an icon can turn into a check, and a toast says what happened.
+export function useCopy(): [boolean, (text: string) => void] {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      showToast(t("Copied to clipboard"));
+      clearTimeout(timer.current);
+      timer.current = setTimeout(() => setCopied(false), 1500);
+    }, showError);
+  };
+  return [copied, copy];
+}
+
+export function Toaster() {
+  const toast = useToast();
+  if (toast === null) {
+    return null;
+  }
+  return createPortal(<ToastView key={toast.id} message={toast.message} />, document.body);
+}
+
+function ToastView(props: { message: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // A manual popover joins the top layer, so the toast also shows above an
+  // open dialog or drawer.
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (element && typeof element.showPopover === "function") {
+      element.showPopover();
+    }
+  }, []);
+  return (
+    <div ref={ref} popover="manual" className="toast" role="status">
+      <Icon name="check" size={13} />
+      {props.message}
     </div>
   );
 }
@@ -970,6 +1076,7 @@ export function DetailShell(props: {
   onClose: () => void;
   children: ReactNode;
 }) {
+  const { t } = useI18n();
   const isMobile = useIsMobile();
   if (isMobile) {
     return (
@@ -991,9 +1098,12 @@ export function DetailShell(props: {
       onClose={props.onClose}
       ariaLabel={typeof props.title === "string" ? props.title : props.backLabel}
     >
-      <h3>
-        {props.title}
-        {props.accessory && <span style={{ marginInlineStart: "auto" }}>{props.accessory}</span>}
+      <h3 className="drawer-title">
+        <span className="drawer-title-text">{props.title}</span>
+        {props.accessory && <span className="drawer-accessory">{props.accessory}</span>}
+        <IconButton className="drawer-close" title={t("Close")} onClick={props.onClose}>
+          <Icon name="close" size={16} />
+        </IconButton>
       </h3>
       {props.subtitle}
       {props.children}
@@ -1003,16 +1113,12 @@ export function DetailShell(props: {
 
 export function CopyValue(props: { value: string; className?: string }) {
   const { t } = useI18n();
+  const [copied, copy] = useCopy();
   return (
     <span className={cx("copy-value", props.className)}>
       <span>{props.value}</span>
-      <IconButton
-        title={t("Copy")}
-        onClick={() => {
-          void navigator.clipboard.writeText(props.value).catch(showError);
-        }}
-      >
-        <Icon name="content_copy" size={13} />
+      <IconButton title={t("Copy")} className={copied ? "copied" : undefined} onClick={() => copy(props.value)}>
+        <Icon name={copied ? "check" : "content_copy"} size={13} />
       </IconButton>
     </span>
   );

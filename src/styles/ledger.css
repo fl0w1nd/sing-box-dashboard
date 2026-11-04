@@ -346,23 +346,6 @@
   color: var(--text-secondary);
 }
 
-.kv-grid {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: var(--space-8) var(--space-20);
-  font-size: var(--text-base);
-}
-
-.kv-grid > dt {
-  color: var(--text-secondary);
-}
-
-.kv-grid > dd {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
 .section-head {
   display: flex;
   gap: var(--space-12);
@@ -399,6 +382,41 @@
   box-shadow: var(--shadow-overlay);
 }
 
+/* Indeterminate progress along the top edge of a busy container. */
+.loading-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: var(--z-sticky-header);
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.loading-bar::after {
+  position: absolute;
+  inset-block: 0;
+  width: 32%;
+  content: "";
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  animation: loading-slide 1.1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes loading-slide {
+  from {
+    left: -32%;
+  }
+
+  to {
+    left: 100%;
+  }
+}
+
+.busy-dim {
+  opacity: 0.45;
+  transition: opacity var(--transition-fast);
+}
+
 @media (max-width: 1180px) {
   .panel.span-3,
   .panel.span-4,
@@ -409,10 +427,6 @@
   }
 
   .panel.span-8 {
-    grid-column: span 12;
-  }
-
-  .panel.wide-md {
     grid-column: span 12;
   }
 }

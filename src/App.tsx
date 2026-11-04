@@ -10,7 +10,7 @@ import {
 import { DaemonApi } from "./api/daemon";
 import type { ExtensionCapabilities } from "./api/extended";
 import { formatDateTime, formatUptime, isHttpUrl } from "./api/format";
-import { isTerminalCode, useStream } from "./api/stream";
+import { isTerminalCode, usePeekStream, useStream } from "./api/stream";
 import { ServiceStatus_Type, type DeprecatedWarning } from "./gen/daemon/started_service_pb";
 import { CapabilitiesContext, ExtensionsContext, makeCapabilities } from "./app/capabilities";
 import { ApiContext, applyTheme, navigate, useApi, useNow } from "./app/context";
@@ -21,7 +21,7 @@ import { I18nProvider, useI18n, type Translate } from "./app/i18n";
 import { BrandMark } from "./components/Board";
 import { Icon, type IconName } from "./components/Icon";
 import { PageHeaderContext } from "./components/PageHeader";
-import { Brand, Button, Dialog, IconButton, Spinner, StateDot } from "./components/ui";
+import { Brand, Button, Dialog, Spinner, StateDot, Toaster, useCopy } from "./components/ui";
 import { SSH_DEFAULT_TERMINAL_TYPE, SSH_DEFAULT_USERNAME } from "./lib/tailscaleSSH";
 import { ConnectionErrorView } from "./views/ConnectionErrorView";
 import { ConnectionsView } from "./views/ConnectionsView";
@@ -185,6 +185,7 @@ export function App() {
     <I18nProvider>
       <WebApp />
       <GlobalErrorDialog />
+      <Toaster />
     </I18nProvider>
   );
 }
@@ -250,6 +251,7 @@ function WebApp() {
 function GlobalErrorDialog() {
   const { t } = useI18n();
   const message = useCurrentError();
+  const [copied, copy] = useCopy();
   if (message === null) {
     return null;
   }
@@ -258,12 +260,9 @@ function GlobalErrorDialog() {
       <h3>{t("Error")}</h3>
       <p className="dialog-message">{message}</p>
       <div className="row-actions dialog-actions">
-        <Button
-          onClick={() => {
-            void navigator.clipboard.writeText(message).catch(() => {});
-          }}
-        >
-          {t("Copy")}
+        <Button onClick={() => copy(message)}>
+          <Icon name={copied ? "check" : "content_copy"} size={13} />
+          {copied ? t("Copied") : t("Copy")}
         </Button>
         <Button variant="primary" onClick={dismissError}>
           {t("Ok")}
@@ -294,6 +293,9 @@ function Shell(props: ShellProps) {
     </ApiContext.Provider>
   );
 }
+
+// Pages with their own tab on the phone layout; the rest sit under "More".
+const TAB_PAGES = new Set(["overview", "groups", "connections", "logs"]);
 
 function ShellContent(props: ShellProps & { onRetry: () => void }) {
   const api = useApi();
@@ -441,6 +443,22 @@ function ShellContent(props: ShellProps & { onRetry: () => void }) {
     </button>
   );
 
+  const tabItem = (page: string, title: string, icon: IconName, active: boolean) => (
+    <button
+      type="button"
+      key={page}
+      className={cx(styles.tab, active && !menuOpen && styles.tabActive)}
+      aria-current={active ? "page" : undefined}
+      onClick={() => {
+        setMenuOpen(false);
+        navigate(page);
+      }}
+    >
+      <Icon name={icon} size={20} />
+      <span>{title}</span>
+    </button>
+  );
+
   const pageContext = {
     server: serverDisplayName(props.server),
     section: routeSection(route, t),
@@ -452,15 +470,12 @@ function ShellContent(props: ShellProps & { onRetry: () => void }) {
         <PageHeaderContext.Provider value={pageContext}>
           <div className={styles.app}>
             <header className={styles.mobileTopbar}>
-              <IconButton
-                aria-label={t("Toggle navigation")}
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen(!menuOpen)}
-              >
-                <Icon name={menuOpen ? "close" : "menu"} size={18} />
-              </IconButton>
               <BrandMark size={26} />
               <div className={styles.mobileTopbarBrand}>sing-box</div>
+              <span className={styles.mobileTopbarServer}>
+                <StateDot tone={reachable ? (started ? "good" : "medium") : "bad"} />
+                {serverDisplayName(props.server)}
+              </span>
             </header>
             {menuOpen && (
               <button
@@ -551,6 +566,21 @@ function ShellContent(props: ShellProps & { onRetry: () => void }) {
                 <ServersView serversState={props.serversState} onServersChange={props.onServersChange} />
               )}
             </main>
+            <nav className={styles.tabbar} aria-label={t("Navigation")}>
+              {tabItem("overview", t("Overview"), "dashboard", route.page === "overview")}
+              {hasGroups && tabItem("groups", t("Groups"), "folder", route.page === "groups")}
+              {started && tabItem("connections", t("Connections"), "swap_vert", route.page === "connections")}
+              {tabItem("logs", t("Logs"), "text_snippet", route.page === "logs")}
+              <button
+                type="button"
+                className={cx(styles.tab, (menuOpen || !TAB_PAGES.has(route.page)) && styles.tabActive)}
+                aria-expanded={menuOpen}
+                onClick={() => setMenuOpen(!menuOpen)}
+              >
+                <Icon name="menu" size={20} />
+                <span>{t("More")}</span>
+              </button>
+            </nav>
             {serviceStatus.phase !== "active" && (
               <div className={styles.reconnectPill} role="status">
                 <Spinner />
@@ -571,8 +601,8 @@ function NavCount(props: { value: number }) {
 
 function ConnectionsNavCount() {
   const api = useApi();
-  const status = useStream(api.status);
-  const current = status.data.current;
+  const status = usePeekStream(api.status);
+  const current = status?.data.current;
   if (!current) {
     return null;
   }
@@ -581,8 +611,8 @@ function ConnectionsNavCount() {
 
 function ProvidersNavCount() {
   const api = useApi();
-  const providers = useStream(api.extended.providers);
-  if (!providers.data.loaded) {
+  const providers = usePeekStream(api.extended.providers);
+  if (!providers?.data.loaded) {
     return null;
   }
   const failing = providers.data.providers.some((provider) => provider.lastError !== "");

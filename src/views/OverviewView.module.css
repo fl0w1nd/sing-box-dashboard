@@ -22,6 +22,13 @@
   background: var(--hover);
 }
 
+.mode-spinner {
+  width: 12px;
+  height: 12px;
+  margin-inline-end: var(--space-6);
+  vertical-align: -1px;
+}
+
 /* Traffic */
 
 .traffic-body {
@@ -177,23 +184,35 @@
   font-size: var(--text-base);
 }
 
-/* Memory */
+/* Core */
 
-.gauge-wrap {
+.core-rows {
   display: flex;
   flex: 1;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
-.gauge-unit {
-  margin-top: var(--space-6);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-faint);
+.core-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(0, 1.4fr);
+  gap: var(--space-16);
+  align-items: end;
 }
 
-/* Goroutines */
+.core-row + .core-row {
+  padding-top: var(--space-16);
+  margin-top: var(--space-16);
+  border-top: 1px solid var(--rule);
+}
+
+.core-text {
+  min-width: 0;
+}
+
+.core-text :global(.metric-foot) {
+  white-space: nowrap;
+}
 
 .range-foot {
   display: flex;

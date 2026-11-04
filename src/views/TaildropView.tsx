@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "
 
 import type { DaemonApi } from "../api/daemon";
 import { formatBytes, formatRelativeTime } from "../api/format";
-import { isTerminalCode, StreamStore, useStream } from "../api/stream";
+import { isTerminalCode, StreamStore, usePeekStream, useStream } from "../api/stream";
 import { navigate, useApi, useNow } from "../app/context";
 import {
   useDesktopHost,
@@ -75,9 +75,9 @@ export function taildropPath(tag: string): string {
 
 export function TaildropNavBadge() {
   const api = useApi();
-  const tailscale = useStream(api.tailscale);
+  const tailscale = usePeekStream(api.tailscale);
   const failed = useTaildropSendFailures(api);
-  const count = tailscale.data.endpoints.reduce(
+  const count = (tailscale?.data.endpoints ?? []).reduce(
     (total, endpoint) => total + endpoint.unreadFileCount,
     0,
   );

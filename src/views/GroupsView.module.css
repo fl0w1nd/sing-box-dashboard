@@ -1,6 +1,19 @@
 .toolbar {
-  max-width: 360px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-8);
+  align-items: center;
   margin-bottom: var(--space-16);
+}
+
+.search {
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+
+.expand-all {
+  margin-inline-start: auto;
 }
 
 .group-panel {
@@ -65,7 +78,7 @@
 }
 
 .group-selected > :global(.icon) {
-  color: var(--accent);
+  color: var(--text);
 }
 
 .group-selected-name {
@@ -75,6 +88,7 @@
 }
 
 .dot-strip {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-4);
@@ -90,6 +104,7 @@
   height: 10px;
   background: var(--neutral-soft);
   border-radius: 3px;
+  transition: transform var(--transition-fast);
 }
 
 .dot.good {
@@ -108,8 +123,19 @@
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 
+.dot:hover {
+  transform: scale(1.25);
+}
+
+.dot-tip {
+  display: flex;
+  gap: var(--space-10);
+  align-items: center;
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
 .dot-selected {
-  box-shadow: 0 0 0 2px var(--board), 0 0 0 3.5px var(--accent);
+  box-shadow: 0 0 0 2px var(--board), 0 0 0 3.5px var(--ink);
 }
 
 .node-grid {
@@ -121,35 +147,47 @@
 
 .node {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
   min-width: 0;
-  padding: var(--space-12) var(--space-14);
   color: var(--text);
-  text-align: start;
-  cursor: pointer;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .node:hover {
   border-color: var(--border-strong);
 }
 
-.node:active {
+.node-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-12) var(--space-14);
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  transition: transform var(--transition-fast);
+}
+
+.node-main:active {
   transform: scale(0.99);
 }
 
-.node-static {
+.node-static .node-main {
   cursor: default;
 }
 
-.node-selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+.node-selected,
+.node-selected:hover {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 0.5px var(--ink);
 }
 
 .node-selected::before {
@@ -159,8 +197,31 @@
   bottom: 12px;
   width: 3px;
   content: "";
-  background: var(--accent);
+  background: var(--ink);
   border-radius: 0 3px 3px 0;
+}
+
+.node-switching,
+.node-switching:hover {
+  border-style: dashed;
+}
+
+.node-switching::before {
+  animation: switching-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes switching-pulse {
+  to {
+    opacity: 0.25;
+  }
+}
+
+.node-spinner {
+  position: absolute;
+  inset-inline-end: var(--space-12);
+  top: var(--space-12);
+  width: 13px;
+  height: 13px;
 }
 
 .node-name {
@@ -176,24 +237,22 @@
   flex-shrink: 0;
 }
 
+.node-switching .node-label {
+  padding-inline-end: var(--space-16);
+}
+
 .node-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.node-meta {
-  display: flex;
-  gap: var(--space-8);
-  align-items: center;
-  justify-content: space-between;
-  font-size: var(--text-xs);
-  color: var(--text-faint);
-}
-
 .node-type {
+  max-width: calc(100% - 56px);
   overflow: hidden;
   text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
   white-space: nowrap;
 }
 
@@ -212,6 +271,44 @@
   height: 6px;
   background: currentcolor;
   border-radius: 50%;
+}
+
+.delay-button {
+  position: absolute;
+  inset-inline-end: var(--space-8);
+  bottom: var(--space-8);
+  justify-content: center;
+  min-width: 44px;
+  height: 22px;
+  padding: 0 var(--space-6);
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.delay-value {
+  display: inline-flex;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+.delay-icon {
+  display: none;
+}
+
+.node:hover .delay-button {
+  background: var(--hover);
+}
+
+.delay-button:hover .delay-value {
+  display: none;
+}
+
+.delay-button:hover .delay-icon {
+  display: block;
+  color: var(--text);
 }
 
 .delay.none .delay-dot {

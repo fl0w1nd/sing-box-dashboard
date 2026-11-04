@@ -32,6 +32,12 @@
   font-size: var(--text-xs);
 }
 
+.range-meta {
+  display: inline-flex;
+  gap: var(--space-8);
+  align-items: center;
+}
+
 /* Summary */
 
 .summary {
@@ -283,7 +289,9 @@
 }
 
 .log-panel {
+  position: relative;
   padding: var(--space-4) var(--space-20);
+  overflow: hidden;
   background: var(--board);
   border: 1px solid var(--border);
   border-radius: var(--radius-board);

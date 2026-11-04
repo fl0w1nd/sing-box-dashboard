@@ -88,68 +88,6 @@
   top: 2px;
 }
 
-/* Gauge */
-
-.gauge {
-  position: relative;
-  margin: 0 auto;
-}
-
-.gauge svg {
-  overflow: visible;
-}
-
-.gauge-track {
-  fill: none;
-  stroke: var(--neutral-soft);
-  stroke-width: 10;
-  stroke-linecap: round;
-}
-
-.gauge-fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 10;
-  stroke-linecap: round;
-  transition: d 0.6s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.gauge-knob {
-  fill: var(--card);
-  stroke: var(--accent);
-  stroke-width: 3;
-}
-
-.gauge-tick {
-  stroke: var(--ink-4);
-  stroke-width: 1;
-}
-
-.gauge-tick-major {
-  stroke: var(--ink-3);
-}
-
-.gauge-tick-filled {
-  opacity: 0.55;
-  stroke: var(--accent);
-}
-
-.gauge-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  fill: var(--text-faint);
-}
-
-.gauge-center {
-  position: absolute;
-  inset: 0 0 8%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
 /* Smooth line */
 
 .line {
@@ -170,6 +108,18 @@
   stroke: var(--series-down);
   stroke-width: 2;
   stroke-linecap: round;
+}
+
+.line-ink .line-stroke {
+  stroke: var(--ink-2);
+}
+
+.line-ink .line-area {
+  fill: var(--neutral-soft);
+}
+
+.line-ink .line-knob {
+  stroke: var(--ink-2);
 }
 
 .line-area {
@@ -345,11 +295,11 @@
 
 .stem-selected {
   color: var(--text);
-  background: var(--accent-wash);
+  background: var(--hover);
 }
 
 .stem-selected .stem-line {
-  background: var(--accent);
+  background: var(--ink);
 }
 
 .stem-selected .stem-label {
@@ -357,5 +307,33 @@
 }
 
 .stem-selected .stem-plot {
-  border-bottom: 2px solid var(--accent);
+  border-bottom: 2px solid var(--ink);
+}
+
+.stem-more {
+  color: var(--text-faint);
+}
+
+.stem-more-count {
+  position: absolute;
+  bottom: var(--space-8);
+  left: 50%;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  transform: translateX(-50%);
+}
+
+.stem-switching .stem-plot {
+  border-bottom-style: dashed;
+}
+
+.stem-switching .stem-head {
+  animation: stem-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes stem-pulse {
+  to {
+    opacity: 0.3;
+    transform: translateX(-50%) scale(0.7);
+  }
 }

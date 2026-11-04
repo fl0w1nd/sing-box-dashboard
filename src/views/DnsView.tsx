@@ -21,6 +21,7 @@ import {
   MenuItem,
   OthersMenu,
   SearchInput,
+  LoadingBar,
   Select,
   Spinner,
   type BadgeTone,
@@ -246,7 +247,7 @@ function DnsContent(props: { storage: string }) {
   const [typeFilter, setTypeFilter] = useState("");
   const [serverFilter, setServerFilter] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
-  const stats = useStats(range);
+  const { stats, loading: statsLoading } = useStats(range);
 
   const focusSearch = (value: string, status = "") => {
     setSearch(value);
@@ -271,9 +272,12 @@ function DnsContent(props: { storage: string }) {
           value={range}
           onChange={setRange}
         />
-        <span className="faint mono">{props.storage}</span>
+        <span className={styles.rangeMeta}>
+          {statsLoading && <Spinner />}
+          <span className="faint mono">{props.storage}</span>
+        </span>
       </div>
-      <Board>
+      <Board className={cx(statsLoading && stats !== null && "busy-dim")}>
         <SummaryPanel stats={stats} />
         <TopPanel
           icon="dns"
@@ -315,18 +319,30 @@ function DnsContent(props: { storage: string }) {
   );
 }
 
-function useStats(range: Range): DNSQueryLogStats | null {
+// `loading` covers the first answer for a range, not the quiet refreshes
+// that follow it, so switching ranges is visibly in progress.
+function useStats(range: Range): { stats: DNSQueryLogStats | null; loading: boolean } {
   const api = useApi();
   const [stats, setStats] = useState<DNSQueryLogStats | null>(null);
+  const [loadedRange, setLoadedRange] = useState<Range | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     const load = () => {
       const { span, bucket } = RANGES[range];
-      api.extended.dnsLogStats({ since: Date.now() - span }, bucket, 8, controller.signal).then(setStats, (error: unknown) => {
-        if (!controller.signal.aborted) {
-          showError(error);
-        }
-      });
+      api.extended
+        .dnsLogStats({ since: Date.now() - span }, bucket, 8, controller.signal)
+        .then(
+          (result) => {
+            setStats(result);
+            setLoadedRange(range);
+          },
+          (error: unknown) => {
+            if (!controller.signal.aborted) {
+              setLoadedRange(range);
+              showError(error);
+            }
+          },
+        );
     };
     load();
     const timer = setInterval(load, 15_000);
@@ -335,7 +351,7 @@ function useStats(range: Range): DNSQueryLogStats | null {
       clearInterval(timer);
     };
   }, [api, range]);
-  return stats;
+  return { stats, loading: loadedRange !== range };
 }
 
 function sumStatuses(statuses: Record<string, bigint> | undefined, keys: string[]): number {
@@ -664,12 +680,15 @@ function QueryLog(props: {
   }, [debouncedSearch, onSearch]);
 
   const log = useQueryLog(props.filter, live);
+  // Busy from the first keystroke: the debounce and the query both count.
+  const typing = searchInput.trim() !== (props.filter.search ?? "").trim();
+  const busy = log.loading || typing;
 
   return (
     <>
       <div className={styles.filters}>
         <div className={styles.filterSearch}>
-          <SearchInput value={searchInput} onChange={setSearchInput} />
+          <SearchInput value={searchInput} onChange={setSearchInput} busy={busy} />
         </div>
         <Select
           inline
@@ -707,15 +726,16 @@ function QueryLog(props: {
           {live ? t("Live") : t("Paused")}
         </button>
       </div>
-      <div className={styles.logPanel}>
-        {log.loading && log.entries.length === 0 ? (
+      <div className={styles.logPanel} aria-busy={busy || undefined}>
+        <LoadingBar active={busy} />
+        {busy && log.entries.length === 0 ? (
           <EmptyState>
             <Spinner />
           </EmptyState>
         ) : log.entries.length === 0 ? (
           <EmptyState icon="search">{t("No queries match the filters")}</EmptyState>
         ) : (
-          <div className={styles.tableWrap}>
+          <div className={cx(styles.tableWrap, busy && "busy-dim")}>
             <table className={cx(styles.table, styles.logTable)}>
               <thead>
                 <tr>

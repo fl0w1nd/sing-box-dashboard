@@ -11,8 +11,10 @@
  *
  * A warm paper canvas, hairline rules and ink-dark text. Panels sit edge to
  * edge on a board separated by 1px rules instead of floating as cards. One
- * signal colour (vermilion) marks what is live or selected; cobalt is the
- * second data series (download, inbound). Numbers are set large and light;
+ * signal colour (vermilion) marks the live route and the current page; a
+ * selection is drawn in ink, and failure has its own colour (crimson) so a
+ * chosen node never reads as a broken one. Cobalt is the second data series
+ * (download, inbound). Numbers are set large and light;
  * labels in small monospaced capitals. Light only for now.
  */
 :root {
@@ -36,6 +38,7 @@
   --cobalt: #2f5be3;
   --jade: #23885a;
   --amber: #c2850f;
+  --crimson: #c4234a;
 
   /* Semantic surfaces */
   --bg: var(--paper-raised);
@@ -66,12 +69,13 @@
 
   --good: var(--jade);
   --good-soft: rgb(35 136 90 / 11%);
+  --good-on-ink: #5fd39a;
   --medium: var(--amber);
   --medium-soft: rgb(194 133 15 / 12%);
-  --bad: var(--vermilion);
-  --bad-soft: rgb(229 72 45 / 11%);
-  --danger: #c4321f;
-  --danger-soft: rgb(196 50 31 / 9%);
+  --bad: var(--crimson);
+  --bad-soft: rgb(196 35 74 / 10%);
+  --danger: var(--crimson);
+  --danger-soft: rgb(196 35 74 / 8%);
   --info: var(--cobalt);
   --info-soft: rgb(47 91 227 / 10%);
   --neutral-soft: rgb(27 26 23 / 6%);
@@ -162,6 +166,8 @@
   --z-scrim: 400;
   --z-topbar: 410;
   --z-drawer: 500;
+  --z-toast: 1000;
+  --tabbar-height: 0px;
   --z-terminal-overlay: 600;
   --z-terminal-bar: 610;
 }
@@ -338,5 +344,6 @@ a:hover {
 
   :root {
       --control-height: 36px;
+      --tabbar-height: 58px;
     }
 }

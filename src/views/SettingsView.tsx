@@ -16,14 +16,13 @@ import {
   loadDisableDeprecatedWarnings,
   saveDisableDeprecatedWarnings,
 } from "../app/deprecatedWarnings";
-import { showError } from "../app/errorStore";
 import { useUnaryOnce } from "../app/hooks";
 import { LanguageSelect, useI18n, type MessageKey } from "../app/i18n";
 import { ForceRelayRow } from "../components/ForceRelayRow";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { ReachabilityIndicator, useServerReachability } from "../components/ReachabilityIndicator";
-import { Button, Dialog, Field, IconButton, MenuItem, NavRow, SecretInput, Select, Spinner, Switch, useContextMenu } from "../components/ui";
+import { Button, Dialog, Field, IconButton, MenuItem, NavRow, SecretInput, Select, Spinner, Switch, useContextMenu, useCopy } from "../components/ui";
 import {
   DEFAULT_DARK_THEME_NAME,
   DEFAULT_LIGHT_THEME_NAME,
@@ -51,12 +50,11 @@ export function SettingsView() {
   const extensions = useExtensions();
   const forceRelaySupported = useExtension("tailscale_force_relay");
   const { language } = useI18n();
+  const [, copy] = useCopy();
   const versionMenu = useContextMenu(
     <MenuItem
       icon="content_copy"
-      onSelect={() => {
-        void navigator.clipboard.writeText(serverInfo?.version ?? "").catch(showError);
-      }}
+      onSelect={() => copy(serverInfo?.version ?? "")}
     >
       {t("Copy")}
     </MenuItem>,

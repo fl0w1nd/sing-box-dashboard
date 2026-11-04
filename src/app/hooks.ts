@@ -131,12 +131,14 @@ export function useDismiss(
   }, [ref, open, dismissRef]);
 }
 
-export function usePendingValue<T>(serverValue: T): [T, (pending: T | null) => void] {
+// The third value is true while a change is on its way to the core, so the
+// control can say it is working instead of looking ignored.
+export function usePendingValue<T>(serverValue: T): [T, (pending: T | null) => void, boolean] {
   const [pending, setPending] = useState<T | null>(null);
   if (pending !== null && serverValue === pending) {
     setPending(null);
   }
-  return [pending ?? serverValue, setPending];
+  return [pending ?? serverValue, setPending, pending !== null];
 }
 
 // Failures are ignored: daemons predating the method reject with Unimplemented.

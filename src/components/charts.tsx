@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import { cx } from "../lib/cx";
 import styles from "./charts.module.css";
@@ -58,8 +58,9 @@ export function TrafficStems(props: {
   const pad = 8;
   const step = width > 0 ? (width - pad * 2) / Math.max(capacity - 1, 1) : 0;
   const offset = capacity - props.up.length;
-  const upMax = niceCeil(Math.max(...props.up, 1024));
-  const downMax = niceCeil(Math.max(...props.down, 1024));
+  // One scale for both halves, so a trickle of upload next to a heavy
+  // download looks like one.
+  const scaleMax = niceCeil(Math.max(...props.up, ...props.down, 1024));
   const xAt = (index: number) => pad + (offset + index) * step;
 
   let peakIndex = -1;
@@ -98,9 +99,9 @@ export function TrafficStems(props: {
           )}
           {props.up.map((value, index) => {
             const x = xAt(index);
-            const upY = mid - (value / upMax) * reach;
+            const upY = mid - (value / scaleMax) * reach;
             const downValue = props.down[index] ?? 0;
-            const downY = mid + (downValue / downMax) * reach;
+            const downY = mid + (downValue / scaleMax) * reach;
             return (
               <g key={index} className={hovered !== null && hovered !== index ? styles.dimmed : undefined}>
                 {value > 0 && <line x1={x} x2={x} y1={mid} y2={upY} className={styles.stemUp} />}
@@ -131,7 +132,7 @@ export function TrafficStems(props: {
           className={styles.peak}
           style={{
             left: xAt(peakIndex),
-            top: mid - ((props.up[peakIndex] ?? 0) / upMax) * reach - 30,
+            top: mid - ((props.up[peakIndex] ?? 0) / scaleMax) * reach - 30,
           }}
         >
           {props.labels.peak}
@@ -139,9 +140,9 @@ export function TrafficStems(props: {
       )}
       {width > 0 && (
         <>
-          <span className={cx(styles.scale, styles.scaleUp)}>{props.format(upMax)}</span>
+          <span className={cx(styles.scale, styles.scaleUp)}>{props.format(scaleMax)}</span>
           <span className={cx(styles.scale, styles.scaleDown)} style={{ top: plotHeight - 18 }}>
-            {props.format(downMax)}
+            {props.format(scaleMax)}
           </span>
         </>
       )}
@@ -172,75 +173,6 @@ export function TrafficStems(props: {
   );
 }
 
-/* ------------------------------------------------------------------ gauge */
-
-function polar(cx: number, cy: number, radius: number, degrees: number) {
-  const radians = (degrees * Math.PI) / 180;
-  return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) };
-}
-
-function arcPath(cx: number, cy: number, radius: number, from: number, to: number) {
-  const start = polar(cx, cy, radius, from);
-  const end = polar(cx, cy, radius, to);
-  const large = to - from > 180 ? 1 : 0;
-  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${large} 1 ${end.x} ${end.y}`;
-}
-
-const GAUGE_START = 135;
-const GAUGE_SWEEP = 270;
-
-export function RadialGauge(props: {
-  value: number;
-  max: number;
-  tickLabels: string[];
-  children?: ReactNode;
-  size?: number;
-}) {
-  const size = props.size ?? 240;
-  const center = size / 2;
-  const radius = size / 2 - 34;
-  const ratio = Math.max(0, Math.min(1, props.max > 0 ? props.value / props.max : 0));
-  const end = GAUGE_START + GAUGE_SWEEP * ratio;
-  const knob = polar(center, center, radius, end);
-  const minorTicks = 54;
-  return (
-    <div className={styles.gauge} style={{ width: size, height: size * 0.88 }}>
-      <svg width={size} height={size * 0.88} aria-hidden="true">
-        {Array.from({ length: minorTicks + 1 }, (_, index) => {
-          const angle = GAUGE_START + (GAUGE_SWEEP * index) / minorTicks;
-          const major = index % (minorTicks / 4) === 0;
-          const inner = polar(center, center, radius + 10, angle);
-          const outer = polar(center, center, radius + (major ? 18 : 15), angle);
-          const filled = index / minorTicks <= ratio;
-          return (
-            <line
-              key={index}
-              x1={inner.x}
-              y1={inner.y}
-              x2={outer.x}
-              y2={outer.y}
-              className={cx(styles.gaugeTick, filled && styles.gaugeTickFilled, major && styles.gaugeTickMajor)}
-            />
-          );
-        })}
-        {props.tickLabels.map((label, index) => {
-          const angle = GAUGE_START + (GAUGE_SWEEP * index) / (props.tickLabels.length - 1);
-          const point = polar(center, center, radius + 29, angle);
-          return (
-            <text key={index} x={point.x} y={point.y + 3} textAnchor="middle" className={styles.gaugeLabel}>
-              {label}
-            </text>
-          );
-        })}
-        <path d={arcPath(center, center, radius, GAUGE_START, GAUGE_START + GAUGE_SWEEP)} className={styles.gaugeTrack} />
-        {ratio > 0.002 && <path d={arcPath(center, center, radius, GAUGE_START, end)} className={styles.gaugeFill} />}
-        <circle cx={knob.x} cy={knob.y} r={6.5} className={styles.gaugeKnob} />
-      </svg>
-      <div className={styles.gaugeCenter}>{props.children}</div>
-    </div>
-  );
-}
-
 /* ------------------------------------------------------------ smooth line */
 
 function smoothPath(points: { x: number; y: number }[]): string {
@@ -262,7 +194,7 @@ function smoothPath(points: { x: number; y: number }[]): string {
   return path;
 }
 
-export function SmoothLine(props: { data: number[]; capacity: number; height?: number }) {
+export function SmoothLine(props: { data: number[]; capacity: number; height?: number; tone?: "ink" }) {
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const height = props.height ?? 120;
   const pad = 8;
@@ -280,7 +212,7 @@ export function SmoothLine(props: { data: number[]; capacity: number; height?: n
   }));
   const last = points[points.length - 1];
   return (
-    <div ref={ref} className={cx(styles.line, "dot-grid")} style={{ height }}>
+    <div ref={ref} className={cx(styles.line, "dot-grid", props.tone === "ink" && styles.lineInk)} style={{ height }}>
       {width > 0 && points.length > 1 && (
         <svg width={width} height={height} aria-hidden="true">
           <path
@@ -346,9 +278,11 @@ export interface StemNode {
 export function NodeStems(props: {
   nodes: StemNode[];
   selected: string;
+  switching?: boolean;
   selectable: boolean;
   onSelect: (tag: string) => void;
   height?: number;
+  more?: { count: number; label: string; onOpen: () => void };
 }) {
   const height = props.height ?? 190;
   const maxDelay = Math.max(...props.nodes.map((node) => node.delay), 0);
@@ -365,7 +299,13 @@ export function NodeStems(props: {
             <button
               type="button"
               key={node.tag}
-              className={cx(styles.stemColumn, selected && styles.stemSelected, !props.selectable && styles.stemStatic)}
+              className={cx(
+                styles.stemColumn,
+                selected && styles.stemSelected,
+                selected && props.switching && styles.stemSwitching,
+                !props.selectable && styles.stemStatic,
+              )}
+              aria-busy={(selected && props.switching) || undefined}
               title={node.delay > 0 ? `${node.tag} · ${node.delay} ms` : node.tag}
               aria-pressed={selected}
               onClick={() => props.onSelect(node.tag)}
@@ -386,6 +326,14 @@ export function NodeStems(props: {
             </button>
           );
         })}
+        {props.more && props.more.count > 0 && (
+          <button type="button" className={cx(styles.stemColumn, styles.stemMore)} onClick={props.more.onOpen}>
+            <span className={styles.stemPlot}>
+              <span className={styles.stemMoreCount}>+{props.more.count}</span>
+            </span>
+            <span className={styles.stemLabel}>{props.more.label}</span>
+          </button>
+        )}
       </div>
     </div>
   );

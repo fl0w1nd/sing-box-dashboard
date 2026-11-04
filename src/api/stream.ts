@@ -36,6 +36,9 @@ export function isTerminalCode(code: Code | undefined): boolean {
 
 export class StreamStore<T> {
   private listeners = new Set<() => void>();
+  // Observers see updates but never open the stream themselves; see peek.
+  private observers = new Set<() => void>();
+  private running = false;
   private snapshot: StreamSnapshot<T>;
   private controller: AbortController | null = null;
   private skipBackoff = false;
@@ -65,6 +68,22 @@ export class StreamStore<T> {
 
   getSnapshot = (): StreamSnapshot<T> => this.snapshot;
 
+  observe = (listener: () => void): (() => void) => {
+    this.observers.add(listener);
+    return () => {
+      this.observers.delete(listener);
+    };
+  };
+
+  // The snapshot while some page keeps the stream open, otherwise null.
+  peek = (): StreamSnapshot<T> | null => (this.running ? this.snapshot : null);
+
+  private notifyObservers() {
+    for (const observer of this.observers) {
+      observer();
+    }
+  }
+
   retryNow = (): void => {
     this.skipBackoff = true;
     this.wakeBackoff?.();
@@ -86,6 +105,7 @@ export class StreamStore<T> {
         for (const listener of this.listeners) {
           listener();
         }
+        this.notifyObservers();
       });
     }
   }
@@ -94,12 +114,16 @@ export class StreamStore<T> {
     const controller = new AbortController();
     this.controller = controller;
     this.skipBackoff = false;
+    this.running = true;
+    queueMicrotask(() => this.notifyObservers());
     void this.loop(controller.signal);
   }
 
   private stop() {
     this.controller?.abort();
     this.controller = null;
+    this.running = false;
+    queueMicrotask(() => this.notifyObservers());
     if (this.flushHandle !== null) {
       clearTimeout(this.flushHandle);
       this.flushHandle = null;
@@ -168,4 +192,12 @@ export class StreamStore<T> {
 
 export function useStream<T>(store: StreamStore<T>): StreamSnapshot<T> {
   return useSyncExternalStore(store.subscribe, store.getSnapshot);
+}
+
+// Browsers allow six HTTP/1.1 connections per host and every open stream
+// holds one, so a request made after six streams waits until one closes.
+// Side indicators (navigation counts, badges) therefore only show data from
+// streams a page already has open, and never open one of their own.
+export function usePeekStream<T>(store: StreamStore<T>): StreamSnapshot<T> | null {
+  return useSyncExternalStore(store.observe, store.peek);
 }

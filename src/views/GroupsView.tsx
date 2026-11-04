@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { proxyDisplayType, splitNodeTag, urlTestDelayTone } from "../api/format";
 import { useStream } from "../api/stream";
 import { useApi } from "../app/context";
+import { loadStoredString, saveStoredString } from "../lib/storage";
 import { showError } from "../app/errorStore";
 import { usePendingValue } from "../app/hooks";
 import { useI18n } from "../app/i18n";
@@ -10,7 +11,7 @@ import { Board, Panel } from "../components/Board";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamStates } from "../components/StreamBanner";
-import { Button, IconButton, MenuItem, SearchInput, Spinner, useContextMenu } from "../components/ui";
+import { Button, IconButton, MenuItem, SearchInput, Spinner, useContextMenu, useCopy } from "../components/ui";
 import type { Group, GroupItem } from "../gen/daemon/started_service_pb";
 import styles from "./GroupsView.module.css";
 import { cx } from "../lib/cx";
@@ -22,6 +23,19 @@ export function GroupsView() {
   const [search, setSearch] = useState("");
   const query = search.trim().toLowerCase();
   const [testingAll, setTestingAll] = useState(false);
+  const [sort, setSortState] = useState<NodeSort>(() => parseSort(loadStoredString(SORT_KEY)));
+  const setSort = (value: NodeSort) => {
+    saveStoredString(SORT_KEY, value);
+    setSortState(value);
+  };
+  const allExpanded = groups.data.groups.length > 0 && groups.data.groups.every((group) => group.isExpand);
+  const setAllExpanded = (expand: boolean) => {
+    Promise.all(
+      groups.data.groups
+        .filter((group) => group.isExpand !== expand)
+        .map((group) => api.setGroupExpand(group.tag, expand)),
+    ).catch(showError);
+  };
 
   return (
     <div className="page">
@@ -43,7 +57,31 @@ export function GroupsView() {
         }
       />
       <div className={styles.toolbar}>
-        <SearchInput value={search} onChange={setSearch} />
+        <div className={styles.search}>
+          <SearchInput value={search} onChange={setSearch} />
+        </div>
+        <div className="segmented compact" role="radiogroup" aria-label={t("Sort")}>
+          {SORTS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={sort === option.value}
+              className={sort === option.value ? "active" : ""}
+              onClick={() => setSort(option.value)}
+            >
+              {t(option.label)}
+            </button>
+          ))}
+        </div>
+        <Button
+          className={styles.expandAll}
+          disabled={groups.data.groups.length === 0}
+          onClick={() => setAllExpanded(!allExpanded)}
+        >
+          <Icon name={allExpanded ? "unfold_less" : "unfold_more"} />
+          {allExpanded ? t("Collapse all") : t("Expand all")}
+        </Button>
       </div>
       <StreamStates
         snapshot={groups}
@@ -55,7 +93,7 @@ export function GroupsView() {
       {groups.data.groups.length > 0 && (
         <Board>
           {groups.data.groups.map((group) => (
-            <GroupPanel key={group.tag} group={group} query={query} />
+            <GroupPanel key={group.tag} group={group} query={query} sort={sort} />
           ))}
         </Board>
       )}
@@ -63,20 +101,48 @@ export function GroupsView() {
   );
 }
 
+type NodeSort = "default" | "latency" | "name";
+
+const SORT_KEY = "groups-sort";
+
+const SORTS = [
+  { value: "default", label: "Default" },
+  { value: "latency", label: "Latency" },
+  { value: "name", label: "Name" },
+] as const satisfies readonly { value: NodeSort; label: string }[];
+
+function parseSort(value: string | null): NodeSort {
+  return value === "latency" || value === "name" ? value : "default";
+}
+
+function sortItems(items: GroupItem[], sort: NodeSort): GroupItem[] {
+  if (sort === "default") {
+    return items;
+  }
+  const sorted = [...items];
+  if (sort === "latency") {
+    const key = (item: GroupItem) => (item.urlTestDelay > 0 ? item.urlTestDelay : Infinity);
+    sorted.sort((a, b) => key(a) - key(b));
+  } else {
+    sorted.sort((a, b) => splitNodeTag(a.tag).name.localeCompare(splitNodeTag(b.tag).name));
+  }
+  return sorted;
+}
+
 function matches(item: GroupItem, query: string) {
   return query === "" || item.tag.toLowerCase().includes(query) || item.type.toLowerCase().includes(query);
 }
 
-function GroupPanel(props: { group: Group; query: string }) {
+function GroupPanel(props: { group: Group; query: string; sort: NodeSort }) {
   const api = useApi();
   const { t } = useI18n();
   const group = props.group;
   const [testing, setTesting] = useState(false);
   const [expanded, setExpandOverride] = usePendingValue(group.isExpand);
-  const [selected, setPendingSelection] = usePendingValue(group.selected);
+  const [selected, setPendingSelection, switching] = usePendingValue(group.selected);
   const items = group.items.filter((item) => matches(item, props.query));
   const groupMatches = props.query !== "" && group.tag.toLowerCase().includes(props.query);
-  const visibleItems = groupMatches ? group.items : items;
+  const visibleItems = sortItems(groupMatches ? group.items : items, props.sort);
   const open = expanded || (props.query !== "" && visibleItems.length > 0);
   const selectedItem = group.items.find((item) => item.tag === selected);
   const selectedSplit = selected !== "" ? splitNodeTag(selected) : null;
@@ -120,8 +186,8 @@ function GroupPanel(props: { group: Group; query: string }) {
           <span className={styles.groupCount}>{t("{count} nodes", { count: group.items.length })}</span>
         </button>
         {selectedSplit && (
-          <span className={styles.groupSelected}>
-            <Icon name="keyboard_arrow_right" size={13} />
+          <span className={styles.groupSelected} aria-busy={switching || undefined}>
+            {switching ? <Spinner /> : <Icon name="keyboard_arrow_right" size={13} />}
             {selectedSplit.flag !== "" && <span>{selectedSplit.flag}</span>}
             <span className={styles.groupSelectedName}>{selectedSplit.name}</span>
             {selectedItem && selectedItem.urlTestDelay > 0 && (
@@ -142,75 +208,139 @@ function GroupPanel(props: { group: Group; query: string }) {
               key={item.tag}
               item={item}
               selected={item.tag === selected}
+              switching={switching && item.tag === selected}
               selectable={group.selectable}
               onSelect={() => selectItem(item)}
             />
           ))}
         </div>
       ) : (
-        <button type="button" className={styles.dotStrip} onClick={toggleExpand} aria-label={t("Expand")}>
-          {group.items.map((item) => {
-            const tone = item.urlTestDelay > 0 ? urlTestDelayTone(item.urlTestDelay) : "none";
-            return (
-              <span
-                key={item.tag}
-                className={cx(styles.dot, styles[tone], item.tag === selected && styles.dotSelected)}
-                title={`${item.tag}${item.urlTestDelay > 0 ? ` (${item.urlTestDelay} ms)` : ""}`}
-              />
-            );
-          })}
-        </button>
+        <DotStrip items={group.items} selected={selected} onExpand={toggleExpand} />
       )}
     </Panel>
   );
 }
 
-function NodeTile(props: { item: GroupItem; selected: boolean; selectable: boolean; onSelect: () => void }) {
+function DotStrip(props: { items: GroupItem[]; selected: string; onExpand: () => void }) {
+  const { t } = useI18n();
+  const ref = useRef<HTMLButtonElement>(null);
+  const [hover, setHover] = useState<{ item: GroupItem; left: number; top: number } | null>(null);
+  return (
+    <button
+      ref={ref}
+      type="button"
+      className={styles.dotStrip}
+      onClick={props.onExpand}
+      onPointerLeave={() => setHover(null)}
+      aria-label={t("Expand")}
+    >
+      {props.items.map((item) => {
+        const tone = item.urlTestDelay > 0 ? urlTestDelayTone(item.urlTestDelay) : "none";
+        return (
+          <span
+            key={item.tag}
+            className={cx(styles.dot, styles[tone], item.tag === props.selected && styles.dotSelected)}
+            onPointerEnter={(event) => {
+              const strip = ref.current?.getBoundingClientRect();
+              const dot = event.currentTarget.getBoundingClientRect();
+              if (strip) {
+                setHover({ item, left: dot.left - strip.left + dot.width / 2, top: dot.top - strip.top });
+              }
+            }}
+          />
+        );
+      })}
+      {hover && (
+        <span className={cx("tooltip-card", styles.dotTip)} style={{ left: hover.left, top: hover.top }}>
+          <span>{hover.item.tag}</span>
+          <span className={cx(styles.delay, styles[hover.item.urlTestDelay > 0 ? urlTestDelayTone(hover.item.urlTestDelay) : "none"])}>
+            {hover.item.urlTestDelay > 0 ? `${hover.item.urlTestDelay} ms` : t("No result")}
+          </span>
+        </span>
+      )}
+    </button>
+  );
+}
+
+function NodeTile(props: {
+  item: GroupItem;
+  selected: boolean;
+  switching: boolean;
+  selectable: boolean;
+  onSelect: () => void;
+}) {
   const api = useApi();
   const { t } = useI18n();
   const item = props.item;
   const split = splitNodeTag(item.tag);
   const tone = item.urlTestDelay > 0 ? urlTestDelayTone(item.urlTestDelay) : "none";
+  const [testing, setTesting] = useState(false);
+  const [copied, copy] = useCopy();
+  const runTest = () => {
+    setTesting(true);
+    api
+      .urlTest(item.tag)
+      .catch(showError)
+      .finally(() => setTesting(false));
+  };
   const menu = useContextMenu(
     <>
-      <MenuItem icon="speed" onSelect={() => api.urlTest(item.tag).catch(showError)}>
+      <MenuItem icon="speed" onSelect={runTest}>
         {t("URL test")}
       </MenuItem>
       <MenuItem
-        icon="content_copy"
-        onSelect={() => {
-          void navigator.clipboard.writeText(item.tag).catch(showError);
-        }}
+        icon={copied ? "check" : "content_copy"}
+        onSelect={() => copy(item.tag)}
       >
-        {t("Copy")}
+        {t("Copy name")}
       </MenuItem>
     </>,
   );
 
   return (
     <>
-      <button
-        type="button"
-        className={cx(styles.node, props.selected && styles.nodeSelected, !props.selectable && styles.nodeStatic)}
-        aria-pressed={props.selected}
-        onClick={props.onSelect}
+      <div
+        className={cx(
+          styles.node,
+          props.selected && styles.nodeSelected,
+          props.switching && styles.nodeSwitching,
+          !props.selectable && styles.nodeStatic,
+        )}
+        aria-busy={props.switching || undefined}
         {...menu.triggerProps}
       >
-        <span className={styles.nodeName}>
-          {split.flag !== "" && <span className={styles.nodeFlag}>{split.flag}</span>}
-          <span className={styles.nodeLabel}>{split.name}</span>
-        </span>
-        <span className={styles.nodeMeta}>
+        {props.switching && <Spinner className={styles.nodeSpinner} />}
+        <button type="button" className={styles.nodeMain} aria-pressed={props.selected} onClick={props.onSelect}>
+          <span className={styles.nodeName}>
+            {split.flag !== "" && <span className={styles.nodeFlag}>{split.flag}</span>}
+            <span className={styles.nodeLabel}>{split.name}</span>
+          </span>
           <span className={styles.nodeType}>
             {split.prefix !== "" ? `${split.prefix} · ` : ""}
             {proxyDisplayType(item.type)}
           </span>
-          <span className={cx(styles.delay, styles[tone])}>
-            <span className={styles.delayDot} />
-            {item.urlTestDelay > 0 ? `${item.urlTestDelay}` : "—"}
-          </span>
-        </span>
-      </button>
+        </button>
+        <button
+          type="button"
+          className={cx(styles.delay, styles.delayButton, styles[tone])}
+          title={t("URL test")}
+          aria-label={t("URL test")}
+          disabled={testing}
+          onClick={runTest}
+        >
+          {testing ? (
+            <Spinner />
+          ) : (
+            <>
+              <span className={styles.delayValue}>
+                <span className={styles.delayDot} />
+                {item.urlTestDelay > 0 ? `${item.urlTestDelay}` : "—"}
+              </span>
+              <Icon name="speed" size={13} className={styles.delayIcon} />
+            </>
+          )}
+        </button>
+      </div>
       {menu.element}
     </>
   );

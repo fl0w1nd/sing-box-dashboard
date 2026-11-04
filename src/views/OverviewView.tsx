@@ -19,14 +19,7 @@ import { showError } from "../app/errorStore";
 import { usePendingValue } from "../app/hooks";
 import { useI18n } from "../app/i18n";
 import { Board, Meter, Metric, Panel, PanelHead, Tabs } from "../components/Board";
-import {
-  LatencyScale,
-  NodeStems,
-  RadialGauge,
-  SmoothLine,
-  TrafficStems,
-  type StemNode,
-} from "../components/charts";
+import { LatencyScale, NodeStems, SmoothLine, TrafficStems, type StemNode } from "../components/charts";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamBanner } from "../components/StreamBanner";
@@ -78,7 +71,7 @@ export function OverviewView() {
 function ModeSwitch() {
   const api = useApi();
   const clashMode = useStream(api.clashMode);
-  const [currentMode, setPendingMode] = usePendingValue(clashMode.data.currentMode);
+  const [currentMode, setPendingMode, switchingMode] = usePendingValue(clashMode.data.currentMode);
   const modes = clashMode.data.modeList;
   if (modes.length <= 1) {
     return null;
@@ -103,6 +96,7 @@ function ModeSwitch() {
             });
           }}
         >
+          {switchingMode && mode === currentMode && <Spinner className={styles.modeSpinner} />}
           {mode}
         </button>
       ))}
@@ -117,12 +111,11 @@ function OverviewBoard() {
     <Board>
       <TrafficPanel />
       <RoutePanel />
-      <MemoryPanel />
-      <GoroutinesPanel />
-      <ConnectionsPanel />
+      <ConnectionsPanel span={providers ? 4 : 6} />
+      <CorePanel span={providers ? 4 : 6} />
+      {providers && <ProvidersSummaryPanel />}
       <LatencyPanel />
-      {providers && <ProvidersSummaryPanel wide={!dnsLog} />}
-      {dnsLog && <DnsSummaryPanel wide={!providers} />}
+      {dnsLog && <DnsSummaryPanel />}
     </Board>
   );
 }
@@ -323,67 +316,44 @@ function RoutePanel() {
   );
 }
 
-/* --------------------------------------------------------------- memory */
+/* ----------------------------------------------------------------- core */
 
-const MEBIBYTE = 1024 * 1024;
-
-function gaugeMax(bytes: number): number {
-  let max = 64 * MEBIBYTE;
-  while (max < bytes * 1.25) {
-    max *= 2;
-  }
-  return max;
-}
-
-function MemoryPanel() {
+function CorePanel(props: { span: 4 | 6 }) {
   const api = useApi();
   const { t } = useI18n();
   const status = useStream(api.status);
-  const memory = Number(status.data.current?.memory ?? 0);
-  const peak = Math.max(...status.data.memoryHistory, memory);
-  const max = gaugeMax(peak);
-  const labels = [0, 0.25, 0.5, 0.75, 1].map((fraction) => {
-    const value = (max * fraction) / MEBIBYTE;
-    return value >= 1024 ? `${(value / 1024).toFixed(value % 1024 === 0 ? 0 : 1)}G` : String(Math.round(value));
-  });
-  const [value, unit] = splitUnit(formatMemoryBytes(memory));
+  const current = status.data.current;
+  const memory = status.data.memoryHistory;
+  const goroutines = status.data.goroutineHistory;
+  const [memoryValue, memoryUnit] = splitUnit(formatMemoryBytes(Number(current?.memory ?? 0)));
+  const memoryPeak = memory.length > 0 ? formatMemoryBytes(Math.max(...memory)) : "—";
 
   return (
-    <Panel span={4}>
-      <PanelHead icon="memory" title={t("Memory")} subtitle={t("Resident memory of the core")} />
-      <div className={styles.gaugeWrap}>
-        <RadialGauge value={memory} max={max} tickLabels={labels}>
-          <Metric value={status.data.current ? value : "—"} size="medium" />
-          <span className={styles.gaugeUnit}>{t("{unit} in use", { unit: unit || "MB" })}</span>
-        </RadialGauge>
-      </div>
-    </Panel>
-  );
-}
-
-/* ----------------------------------------------------------- goroutines */
-
-function GoroutinesPanel() {
-  const api = useApi();
-  const { t } = useI18n();
-  const status = useStream(api.status);
-  const history = status.data.goroutineHistory;
-  const current = status.data.current?.goroutines;
-  const min = history.length > 0 ? Math.min(...history) : 0;
-  const max = history.length > 0 ? Math.max(...history) : 0;
-  return (
-    <Panel span={4}>
-      <PanelHead icon="workflow" title={t("Goroutines")} subtitle={t("Concurrent tasks in the core")} />
-      <Metric value={current ?? "—"} unit={t("running")} size="large" />
-      <div className={styles.flexFill} />
-      <SmoothLine data={history} capacity={STATUS_HISTORY_LENGTH} height={110} />
-      <div className={cx("metric-foot", styles.rangeFoot)}>
-        <span>
-          {t("Low")} <strong>{min}</strong>
-        </span>
-        <span>
-          {t("High")} <strong>{max}</strong>
-        </span>
+    <Panel span={props.span}>
+      <PanelHead icon="memory" title={t("Core")} subtitle={t("Memory and goroutines")} />
+      <div className={styles.coreRows}>
+        <div className={styles.coreRow}>
+          <div className={styles.coreText}>
+            <div className="metric-label">{t("Memory")}</div>
+            <Metric value={current ? memoryValue : "—"} unit={current ? memoryUnit : undefined} size="medium" />
+            <div className="metric-foot">
+              {t("High")} <strong>{memoryPeak}</strong>
+            </div>
+          </div>
+          <SmoothLine data={memory} capacity={STATUS_HISTORY_LENGTH} height={72} tone="ink" />
+        </div>
+        <div className={styles.coreRow}>
+          <div className={styles.coreText}>
+            <div className="metric-label">{t("Goroutines")}</div>
+            <Metric value={current?.goroutines ?? "—"} size="medium" />
+            <div className="metric-foot">
+              {t("Low")} <strong>{goroutines.length > 0 ? Math.min(...goroutines) : "—"}</strong>
+              {" · "}
+              {t("High")} <strong>{goroutines.length > 0 ? Math.max(...goroutines) : "—"}</strong>
+            </div>
+          </div>
+          <SmoothLine data={goroutines} capacity={STATUS_HISTORY_LENGTH} height={72} />
+        </div>
       </div>
     </Panel>
   );
@@ -391,7 +361,7 @@ function GoroutinesPanel() {
 
 /* ---------------------------------------------------------- connections */
 
-function ConnectionsPanel() {
+function ConnectionsPanel(props: { span: 4 | 6 }) {
   const api = useApi();
   const { t } = useI18n();
   const status = useStream(api.status);
@@ -402,7 +372,7 @@ function ConnectionsPanel() {
   const share = total > 0 ? inbound / total : 0.5;
 
   return (
-    <Panel span={4}>
+    <Panel span={props.span}>
       <PanelHead
         icon="hub"
         title={t("Connections")}
@@ -467,6 +437,7 @@ function ConnectionsPanel() {
 /* -------------------------------------------------------------- latency */
 
 const LATENCY_TAB_KEY = "overview-latency-group";
+const LATENCY_STEM_LIMIT = 16;
 
 function LatencyPanel() {
   const api = useApi();
@@ -476,9 +447,19 @@ function LatencyPanel() {
   const [stored, setStored] = useState(() => loadStoredString(LATENCY_TAB_KEY) ?? "");
   const [testing, setTesting] = useState<string | null>(null);
   const group = list.find((entry) => entry.tag === stored) ?? primaryGroup(list);
-  const [selected, setPendingSelection] = usePendingValue(group?.selected ?? "");
+  const [selected, setPendingSelection, switching] = usePendingValue(group?.selected ?? "");
 
-  const nodes: StemNode[] = (group?.items ?? []).map((item) => {
+  // Fastest first, untested last; the tail beyond the cap lives on the
+  // groups page (the selected node always stays visible).
+  const ranked = [...(group?.items ?? [])].sort(
+    (a, b) => (a.urlTestDelay > 0 ? a.urlTestDelay : Infinity) - (b.urlTestDelay > 0 ? b.urlTestDelay : Infinity),
+  );
+  const shown = ranked.slice(0, LATENCY_STEM_LIMIT);
+  const selectedItem = ranked.find((item) => item.tag === selected);
+  if (selectedItem && !shown.includes(selectedItem)) {
+    shown[shown.length - 1] = selectedItem;
+  }
+  const nodes: StemNode[] = shown.map((item) => {
     const split = splitNodeTag(item.tag);
     return {
       tag: item.tag,
@@ -505,7 +486,7 @@ function LatencyPanel() {
       <PanelHead
         icon="speed"
         title={t("Node latency")}
-        subtitle={group?.selectable ? t("Click a stem to switch the selector") : t("Latest URL test of each member")}
+        subtitle={group?.selectable ? t("Fastest first · click a stem to switch") : t("Fastest first · latest URL test")}
         actions={
           <>
             <div className={cx("legend", styles.latencyLegend)}>
@@ -550,7 +531,9 @@ function LatencyPanel() {
               key={group?.tag}
               nodes={nodes}
               selected={selected}
+              switching={switching}
               selectable={group?.selectable ?? false}
+              more={{ count: ranked.length - nodes.length, label: t("On the groups page"), onOpen: () => navigate("groups") }}
               onSelect={(tag) => {
                 if (!group?.selectable || tag === selected) {
                   return;
@@ -571,7 +554,7 @@ function LatencyPanel() {
 
 /* ------------------------------------------------------------ providers */
 
-function ProvidersSummaryPanel(props: { wide: boolean }) {
+function ProvidersSummaryPanel() {
   const api = useApi();
   const { t, language } = useI18n();
   const now = useNow(30_000);
@@ -579,7 +562,7 @@ function ProvidersSummaryPanel(props: { wide: boolean }) {
   const list = providers.data.providers;
 
   return (
-    <Panel span={props.wide ? 12 : 6}>
+    <Panel span={4}>
       <PanelHead
         icon="provider"
         title={t("Providers")}
@@ -611,7 +594,7 @@ function ProvidersSummaryPanel(props: { wide: boolean }) {
                 </div>
                 {quota > 0 ? (
                   <>
-                    <Meter value={ratio} tone={ratio > 0.85 ? "accent" : undefined} />
+                    <Meter value={ratio} tone={ratio > 0.85 ? "warn" : undefined} />
                     <div className={cx("metric-foot", styles.providerFoot)}>
                       <span>
                         <strong>{formatBytes(used)}</strong> / {formatBytes(quota)}
@@ -641,7 +624,7 @@ function ProvidersSummaryPanel(props: { wide: boolean }) {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function DnsSummaryPanel(props: { wide: boolean }) {
+function DnsSummaryPanel() {
   const api = useApi();
   const { t } = useI18n();
   const cache = useExtension("dns_cache");
@@ -671,7 +654,7 @@ function DnsSummaryPanel(props: { wide: boolean }) {
   const average = Number(stats?.upstreamDuration?.average ?? 0n) / 1000;
 
   return (
-    <Panel span={props.wide ? 12 : 6}>
+    <Panel>
       <PanelHead
         icon="dns"
         title="DNS"

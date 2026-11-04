@@ -14,6 +14,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
   ChevronsUpDown,
   ChevronUp,
   CircleDot,
@@ -95,6 +96,7 @@ const ICONS = {
   upload: ArrowUp,
   upload_file: FileUp,
   download: ArrowDown,
+  arrow_downward: ArrowDown,
   cable: Cable,
   tune: SlidersHorizontal,
   route: Route,
@@ -103,6 +105,7 @@ const ICONS = {
   bolt: Zap,
   speed: Gauge,
   unfold_more: ChevronsUpDown,
+  unfold_less: ChevronsDownUp,
   sync: RefreshCw,
   schedule: Clock,
   filter_list: ListFilter,
@@ -176,13 +179,14 @@ interface IconProps {
   name: IconName;
   size?: number;
   strokeWidth?: number;
+  className?: string;
 }
 
-export function Icon({ name, size = 16, strokeWidth }: IconProps) {
+export function Icon({ name, size = 16, strokeWidth, className }: IconProps) {
   const Component = ICONS[name];
   return (
     <Component
-      className="icon"
+      className={className ? `icon ${className}` : "icon"}
       size={size}
       strokeWidth={strokeWidth ?? (size <= 14 ? 2 : 1.75)}
       style={{ flexShrink: 0 }}

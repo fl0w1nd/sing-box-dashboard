@@ -8,10 +8,9 @@
 
 .peer-list {
   overflow: hidden;
-  background: var(--card);
+  background: var(--board);
   border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
+  border-radius: var(--radius-board);
 }
 
 .peer-item {

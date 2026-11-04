@@ -42,7 +42,7 @@
 }
 
 .quota-high {
-  color: var(--accent);
+  color: var(--danger);
 }
 
 .quota-foot {
@@ -63,7 +63,7 @@
 }
 
 .expiring {
-  color: var(--accent);
+  color: var(--medium);
 }
 
 .no-info {

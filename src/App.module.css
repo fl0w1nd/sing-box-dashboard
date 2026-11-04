@@ -126,7 +126,7 @@
 }
 
 .nav-count-alert {
-  color: var(--accent);
+  color: var(--danger);
 }
 
 .nav-count-alert::before {
@@ -136,7 +136,7 @@
   margin-inline-end: var(--space-6);
   vertical-align: middle;
   content: "";
-  background: var(--accent);
+  background: var(--danger);
   border-radius: 50%;
 }
 
@@ -230,6 +230,10 @@
   height: 21px;
 }
 
+.tabbar {
+  display: none;
+}
+
 .reconnect-pill {
   position: fixed;
   bottom: 18px;
@@ -271,6 +275,66 @@
       font-size: var(--text-lg);
       font-weight: var(--weight-semibold);
       letter-spacing: -0.03em;
+    }
+
+  .mobile-topbar-server {
+      display: inline-flex;
+      gap: var(--space-6);
+      align-items: center;
+      min-width: 0;
+      margin-inline-start: auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: var(--text-sm);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+  .tabbar {
+      position: relative;
+      z-index: var(--z-topbar);
+      display: flex;
+      flex-shrink: 0;
+      padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom));
+      background: var(--surface);
+      border-top: 1px solid var(--rule);
+    }
+
+  .tab {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: var(--space-2);
+      align-items: center;
+      min-width: 0;
+      padding: var(--space-6) var(--space-2) var(--space-4);
+      font-size: var(--text-2xs);
+      color: var(--text-faint);
+      cursor: pointer;
+      background: transparent;
+      border: 0;
+      border-radius: var(--radius-md);
+      transition: color var(--transition-fast);
+    }
+
+  .tab > span {
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+  .tab-active {
+      font-weight: var(--weight-medium);
+      color: var(--text);
+    }
+
+  .tab-active :global(.icon) {
+      color: var(--accent);
+    }
+
+  .reconnect-pill {
+      bottom: calc(var(--tabbar-height) + var(--space-12) + env(safe-area-inset-bottom));
     }
 
   .sidebar {

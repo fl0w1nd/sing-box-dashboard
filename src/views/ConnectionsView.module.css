@@ -12,6 +12,21 @@
   max-width: 420px;
 }
 
+.toolbar-end {
+  display: flex;
+  gap: var(--space-8);
+  align-items: center;
+  margin-inline-start: auto;
+}
+
+.toolbar-end :global(.select-anchor) {
+  width: 150px;
+}
+
+.live-chip {
+  height: var(--control-height);
+}
+
 .list {
   overflow: hidden;
   background: var(--board);
@@ -19,75 +34,160 @@
   border-radius: var(--radius-board);
 }
 
-.connection-row {
-  composes: text-mono from global;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  width: 100%;
-  padding: var(--space-12) var(--space-20);
+.grid {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1.6fr) minmax(0, 1.2fr) 108px 96px 84px 36px;
+  gap: var(--space-16);
+  align-items: center;
+  padding: 0 var(--space-12) 0 var(--space-20);
+}
+
+.header {
+  height: 36px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.row {
+  min-height: 52px;
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-8);
   color: var(--text);
-  text-align: start;
   cursor: pointer;
-  background: transparent;
-  border: 0;
   transition: background var(--transition-fast);
 }
 
-.connection-row + .connection-row {
+.row + .row {
   border-top: 1px solid var(--rule);
 }
 
-.connection-row:hover {
+.row:hover {
   background: var(--card);
 }
 
-.head {
-  composes: text-headline from global;
+.row:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus-ring);
 }
 
-.connection-row .head {
+.closed {
+  color: var(--text-secondary);
+}
+
+.closed .destination,
+.closed .chain {
+  font-weight: var(--weight-normal);
+}
+
+.cell {
   display: flex;
-  gap: var(--space-8);
-  align-items: center;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
 }
 
-.connection-row .head .destination {
+.cell > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.connection-row .head .spacer {
-  flex: 1;
+.destination {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
 }
 
-.connection-row .columns {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-20);
-  color: var(--text-secondary);
+.chain {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
 }
 
-.connection-row .columns > div {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-px);
-  min-width: 90px;
+.sub {
+  font-size: var(--text-xs);
+  color: var(--text-faint);
 }
 
-.connection-row .columns .right {
-  margin-inline-start: auto;
+.num {
+  align-items: flex-end;
   text-align: end;
 }
 
-[dir="rtl"] .connection-row {
-  direction: ltr;
-  unicode-bidi: isolate;
+.network {
+  display: flex;
+}
+
+.action {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.action :global(.icon-button) {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.row:hover .action :global(.icon-button),
+.row:focus-within .action :global(.icon-button) {
+  opacity: 1;
 }
 
 .divider {
   margin: var(--space-14) 0;
   border: 0;
   border-top: 1px solid var(--border);
+}
+
+@media (max-width: 1180px) {
+  .grid {
+    grid-template-columns: 52px minmax(0, 1.4fr) minmax(0, 1fr) 100px 84px 36px;
+  }
+
+  .grid > :nth-child(5) {
+    display: none;
+  }
+}
+
+@media (max-width: 720px) {
+  .toolbar-end {
+    width: 100%;
+    margin-inline-start: 0;
+  }
+
+  .toolbar-end :global(.select-anchor) {
+    flex: 1;
+    width: auto;
+  }
+
+  .header {
+    display: none;
+  }
+
+  .grid {
+    grid-template-areas:
+      "dest dest rate"
+      "chain chain time";
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: var(--space-4) var(--space-12);
+    padding: var(--space-10) var(--space-16);
+  }
+
+  .grid > :nth-child(1),
+  .grid > :nth-child(5),
+  .grid > :nth-child(7) {
+    display: none;
+  }
+
+  .grid > :nth-child(2) { grid-area: dest; }
+  .grid > :nth-child(3) { grid-area: chain; }
+  .grid > :nth-child(4) { grid-area: rate; }
+  .grid > :nth-child(6) { grid-area: time; }
 }
