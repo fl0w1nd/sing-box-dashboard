@@ -182,6 +182,8 @@ message DNSQueryLogStats {
   // included. Buckets start at a multiple of the bucket length in Unix time.
   repeated DNSQueryLogStatsBucket buckets = 4;
   // Domains of exchanges: the queries the core received from clients.
+  // Reverse lookups, of domains under in-addr.arpa or ip6.arpa, are left out
+  // and counted in reverseQueries.
   repeated DNSQueryLogStatsCount topDomains = 5;
   // Domains of blocked entries.
   repeated DNSQueryLogStatsCount topBlockedDomains = 6;
@@ -199,7 +201,8 @@ message DNSQueryLogStats {
   // Entries by method.
   map<string, int64> methods = 12;
   // Domains of lookups and background queries: the ones the core made
-  // itself.
+  // itself. Reverse lookups are left out and counted in
+  // internalReverseQueries.
   repeated DNSQueryLogStatsCount topInternalDomains = 13;
   // Reject and predefined rules by the queries they answered, of every
   // kind.
@@ -212,6 +215,10 @@ message DNSQueryLogStats {
   int64 blocked = 15;
   int64 policy = 16;
   int64 rewritten = 17;
+  // Exchanges, and lookups and background queries, of domains under
+  // in-addr.arpa or ip6.arpa.
+  int64 reverseQueries = 18;
+  int64 internalReverseQueries = 19;
 }
 
 // Rules are told apart by their conditions and action; index is of the

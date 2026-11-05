@@ -556,16 +556,27 @@ function TopPanel(props: {
 type DomainSource = "client" | "internal";
 
 // Clients' queries rank apart from the lookups and refreshes the core makes
-// itself, which would otherwise crowd them out.
+// itself, which would otherwise crowd them out. The core leaves reverse
+// lookups out of both rankings, since every address is a domain of its own,
+// and only counts them.
 function DomainsPanel(props: { stats: DNSQueryLogStats | null; onPick: (key: string) => void }) {
   const { t } = useI18n();
   const [source, setSource] = useState<DomainSource>("client");
-  const counts = (source === "internal" ? props.stats?.topInternalDomains : props.stats?.topDomains) ?? [];
+  const internal = source === "internal";
+  const counts = (internal ? props.stats?.topInternalDomains : props.stats?.topDomains) ?? [];
+  const reverseCount = Number((internal ? props.stats?.internalReverseQueries : props.stats?.reverseQueries) ?? 0n);
   return (
     <TopPanel
       icon="dns"
       title={t("Top domains")}
       items={countItems(counts, props.onPick)}
+      footer={
+        reverseCount > 0 && (
+          <button type="button" className={styles.topFoot} onClick={() => props.onPick(".arpa")}>
+            {t("{count} reverse lookups not ranked", { count: reverseCount.toLocaleString() })}
+          </button>
+        )
+      }
       actions={
         <Chips
           className={styles.panelSwitch}
