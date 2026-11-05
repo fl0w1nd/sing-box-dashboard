@@ -40,7 +40,7 @@ export interface DNSQueryFilter {
   search?: string;
   queryType?: string;
   status?: string;
-  // exchange, lookup or background; cores before the method filter ignore it.
+  // exchange, lookup or background.
   method?: string;
   server?: string;
   inbound?: string;
