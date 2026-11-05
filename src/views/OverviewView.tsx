@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import {
   formatBytes,
@@ -19,14 +19,13 @@ import { usePendingValue, useUnaryOnce } from "../app/hooks";
 import { useI18n, type MessageKey } from "../app/i18n";
 import { useDnsStats } from "../app/useDnsStats";
 import { Board, Meter, Metric, Panel, PanelHead } from "../components/Board";
-import { BarTooltip, LatencyScale, SmoothLine, TrafficStems, useElementWidth } from "../components/charts";
+import { BarTooltip, SmoothLine, TrafficStems, useElementWidth } from "../components/charts";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamBanner } from "../components/StreamBanner";
 import { Topology, useTopologyLabel } from "../components/Topology";
-import { Badge, Button, DataLine, DetailSection, DetailShell, Dialog, EmptyState, Select, Spinner } from "../components/ui";
+import { Badge, Button, DataLine, DetailSection, DetailShell, Dialog, EmptyState, Spinner } from "../components/ui";
 import { ServiceStatus_Type, type Group } from "../gen/daemon/started_service_pb";
-import { loadStoredString, saveStoredString } from "../lib/storage";
 import { cx } from "../lib/cx";
 import {
   TOPOLOGY_COLUMNS,
@@ -118,14 +117,15 @@ function ModeSwitch() {
 function OverviewBoard() {
   const providers = useExtension("outbound_provider");
   const dnsLog = useExtension("dns_query_log");
+  // Providers and DNS share a row; whichever the core has alone takes it.
+  const pair = providers && dnsLog;
   return (
-    <Board className={styles.board}>
+    <Board>
       <TrafficPanel />
-      <RoutePanel />
+      <CorePanel />
       <TopologyPanel />
-      <CorePanel wide={!providers} />
-      {providers && <ProvidersSummaryPanel />}
-      {dnsLog && <DnsSummaryPanel />}
+      {providers && <ProvidersSummaryPanel span={pair ? 6 : 12} />}
+      {dnsLog && <DnsSummaryPanel span={pair ? 6 : 12} />}
     </Board>
   );
 }
@@ -196,138 +196,6 @@ function TrafficPanel() {
           )}
         </div>
       </div>
-    </Panel>
-  );
-}
-
-/* ---------------------------------------------------------------- route */
-
-const ROUTE_GROUP_KEY = "overview-route-group";
-
-interface RouteStep {
-  tag: string;
-  detail: string;
-  group: boolean;
-  delay: number;
-}
-
-// The group an overview panel starts from when the user has not picked one:
-// the first selector with a real choice, which is usually the main proxy
-// group, then any group with members.
-export function primaryGroup(groups: Group[]): Group | undefined {
-  return (
-    groups.find((group) => group.selectable && group.items.length > 1) ??
-    groups.find((group) => group.items.length > 1) ??
-    groups[0]
-  );
-}
-
-function buildChain(groups: Group[], rootTag: string, nodes: (count: number) => string): RouteStep[] {
-  const byTag = new Map(groups.map((group) => [group.tag, group]));
-  const chain: RouteStep[] = [];
-  const visited = new Set<string>();
-  let tag = rootTag;
-  let parent: Group | undefined;
-  while (tag !== "" && !visited.has(tag)) {
-    visited.add(tag);
-    const group = byTag.get(tag);
-    const item = parent?.items.find((entry) => entry.tag === tag);
-    if (!group) {
-      chain.push({
-        tag,
-        detail: item ? proxyDisplayType(item.type) : "",
-        group: false,
-        delay: item?.urlTestDelay ?? 0,
-      });
-      break;
-    }
-    chain.push({
-      tag,
-      detail: `${proxyDisplayType(group.type)} · ${nodes(group.items.length)}`,
-      group: true,
-      delay: item?.urlTestDelay ?? 0,
-    });
-    parent = group;
-    tag = group.selected;
-  }
-  return chain;
-}
-
-function RoutePanel() {
-  const api = useApi();
-  const { t } = useI18n();
-  const groups = useStream(api.groups);
-  const clashMode = useStream(api.clashMode);
-  const list = groups.data.groups;
-  const [stored, setStored] = useState(() => loadStoredString(ROUTE_GROUP_KEY));
-  const root = list.find((group) => group.tag === stored) ?? primaryGroup(list);
-  const chain = useMemo(
-    () => (root ? buildChain(list, root.tag, (count) => t("{count} nodes", { count })) : []),
-    [list, root, t],
-  );
-  const last = chain[chain.length - 1];
-  const delay = last && !last.group ? last.delay : 0;
-  const tone = urlTestDelayTone(delay);
-  const scaleMax = delay > 400 ? Math.ceil(delay / 200) * 200 : 400;
-
-  return (
-    <Panel span={4}>
-      <PanelHead
-        icon="route"
-        title={t("Active route")}
-        actions={clashMode.data.currentMode !== "" && <span className="badge outline">{clashMode.data.currentMode}</span>}
-      />
-      {list.length === 0 ? (
-        <EmptyState icon="route">{t("Empty groups")}</EmptyState>
-      ) : (
-        <>
-          <ol className={styles.chain}>
-            {chain.map((step, index) => {
-              const terminal = index === chain.length - 1;
-              const split = splitNodeTag(step.tag);
-              const text = (
-                <>
-                  <span className={styles.chainTitle}>
-                    {split.flag !== "" && <span className={styles.flag}>{split.flag}</span>}
-                    <span className={styles.chainName}>{split.name}</span>
-                  </span>
-                  <span className={styles.chainDetail}>
-                    {split.prefix !== "" ? `${split.prefix} · ${step.detail}` : step.detail}
-                  </span>
-                </>
-              );
-              return (
-                <li key={step.tag} className={cx(styles.chainStep, terminal && styles.chainActive)}>
-                  <span className={styles.chainMarker} />
-                  <div className={styles.chainText}>
-                    {index === 0 && list.length > 1 ? (
-                      <Select
-                        ariaLabel={t("Switch group")}
-                        options={list.map((group) => ({ value: group.tag, label: group.tag }))}
-                        value={step.tag}
-                        display={<span className={styles.chainPicker}>{text}</span>}
-                        onChange={(value) => {
-                          saveStoredString(ROUTE_GROUP_KEY, value);
-                          setStored(value);
-                        }}
-                      />
-                    ) : (
-                      text
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-          <div className={styles.latency}>
-            <div className={styles.latencyHead}>
-              <span className="secondary">{t("Latency")}</span>
-              <Metric value={delay > 0 ? delay : "—"} unit="ms" size="medium" />
-            </div>
-            <LatencyScale delay={delay} max={scaleMax} tone={tone} />
-          </div>
-        </>
-      )}
     </Panel>
   );
 }
@@ -665,7 +533,7 @@ function TopologyDetail(props: { model: TopologyModel; nodeKey: string; groups: 
 
 /* ----------------------------------------------------------------- core */
 
-function CorePanel(props: { wide: boolean }) {
+function CorePanel() {
   const api = useApi();
   const { t } = useI18n();
   const status = useStream(api.status);
@@ -676,7 +544,7 @@ function CorePanel(props: { wide: boolean }) {
   const memoryPeak = memory.length > 0 ? formatMemoryBytes(Math.max(...memory)) : "—";
 
   return (
-    <Panel span={props.wide ? 12 : 6} className={props.wide ? styles.coreWide : undefined}>
+    <Panel span={4} className={styles.corePanel}>
       <PanelHead icon="memory" title={t("Core")} />
       <div className={styles.coreRows}>
         <div className={styles.coreRow}>
@@ -708,7 +576,7 @@ function CorePanel(props: { wide: boolean }) {
 
 /* ------------------------------------------------------------ providers */
 
-function ProvidersSummaryPanel() {
+function ProvidersSummaryPanel(props: { span: 6 | 12 }) {
   const api = useApi();
   const { t, language } = useI18n();
   const now = useNow(30_000);
@@ -716,7 +584,7 @@ function ProvidersSummaryPanel() {
   const list = providers.data.providers;
 
   return (
-    <Panel span={6} className={styles.providersPanel}>
+    <Panel span={props.span} className={styles.halfPanel}>
       <PanelHead
         icon="provider"
         title={t("Providers")}
@@ -778,7 +646,7 @@ function ProvidersSummaryPanel() {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function DnsSummaryPanel() {
+function DnsSummaryPanel(props: { span: 6 | 12 }) {
   const api = useApi();
   const { t, language } = useI18n();
   const cache = useExtension("dns_cache");
@@ -800,7 +668,7 @@ function DnsSummaryPanel() {
   const hovered = hover !== null ? buckets[hover] : undefined;
 
   return (
-    <Panel>
+    <Panel span={props.span} className={styles.halfPanel}>
       <PanelHead
         icon="dns"
         title="DNS"

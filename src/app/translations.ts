@@ -453,7 +453,6 @@ export const TRANSLATIONS = {
 
   // sing-box Extended dashboard
   "API Version": { "zh-Hans": "API 版本" },
-  "Active route": { "zh-Hans": "当前链路" },
   "Blocked": { "zh-Hans": "已拦截" },
   "Close all connections?": { "zh-Hans": "关闭所有连接？" },
   "Close all": { "zh-Hans": "全部关闭" },
@@ -581,7 +580,6 @@ export const TRANSLATIONS = {
   "Copied": { "zh-Hans": "已复制" },
   "More": { "zh-Hans": "更多" },
   "Navigation": { "zh-Hans": "导航" },
-  "Switch group": { "zh-Hans": "切换策略组" },
   "{count} features": { "zh-Hans": "{count} 项" },
   "Not served": { "zh-Hans": "未提供" },
   "Remote subscriptions with traffic and expiry": { "zh-Hans": "远程订阅，含流量与到期信息" },
