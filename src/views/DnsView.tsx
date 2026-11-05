@@ -7,6 +7,7 @@ import { useApi } from "../app/context";
 import { showError } from "../app/errorStore";
 import { useUnaryOnce } from "../app/hooks";
 import { useI18n, type Translate } from "../app/i18n";
+import { useDnsStats } from "../app/useDnsStats";
 import { Board, Chips, Metric, Panel, PanelHead, SectionHead } from "../components/Board";
 import { BarTooltip, useElementWidth } from "../components/charts";
 import { Icon } from "../components/Icon";
@@ -44,11 +45,10 @@ const LIVE_MAX_ENTRIES = 200;
 
 type Range = "1h" | "24h" | "7d";
 
-// refresh is in milliseconds.
-const RANGES: Record<Range, { span: number; bucket: number; refresh: number }> = {
-  "1h": { span: 3600_000, bucket: 120, refresh: 30_000 },
-  "24h": { span: 86_400_000, bucket: 3600, refresh: 60_000 },
-  "7d": { span: 7 * 86_400_000, bucket: 6 * 3600, refresh: 300_000 },
+const RANGES: Record<Range, { span: number; bucket: number }> = {
+  "1h": { span: 3600_000, bucket: 120 },
+  "24h": { span: 86_400_000, bucket: 3600 },
+  "7d": { span: 7 * 86_400_000, bucket: 6 * 3600 },
 };
 
 const STATUSES = [
@@ -256,7 +256,9 @@ function DnsContent(props: { storage: string }) {
   const [serverFilter, setServerFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
-  const { stats, loading: statsLoading } = useStats(range);
+  // Stats load when the page opens and the range changes, and on refresh,
+  // like the AdGuard Home dashboard: each load reads the log of the range.
+  const { stats, loading: statsLoading, updated, reload } = useDnsStats({ ...RANGES[range], top: 8 });
 
   const focusSearch = (value: string, status = "") => {
     setSearch(value);
@@ -283,8 +285,14 @@ function DnsContent(props: { storage: string }) {
           onChange={setRange}
         />
         <span className={styles.rangeMeta}>
-          {statsLoading && <Spinner />}
           <span className="faint mono">{props.storage}</span>
+          {updated !== null && (
+            <span className="faint">{t("Updated {time}", { time: formatClockTime(updated) })}</span>
+          )}
+          <Button size="small" disabled={statsLoading} onClick={reload}>
+            {statsLoading ? <Spinner /> : <Icon name="sync" size={13} />}
+            {t("Refresh")}
+          </Button>
         </span>
       </div>
       <Board className={cx(statsLoading && stats !== null && "busy-dim")}>
@@ -316,71 +324,6 @@ function DnsContent(props: { storage: string }) {
       />
     </>
   );
-}
-
-// `loading` covers the first answer for a range, not the quiet refreshes
-// that follow it, so switching ranges is visibly in progress.
-//
-// Each refresh makes the core read the log of the whole range, so refreshes
-// wait for the previous answer, come less often for longer ranges, where a
-// minute changes little, and stop while the page is hidden.
-function useStats(range: Range): { stats: DNSQueryLogStats | null; loading: boolean } {
-  const api = useApi();
-  const [stats, setStats] = useState<DNSQueryLogStats | null>(null);
-  const [loadedRange, setLoadedRange] = useState<Range | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    const { span, bucket, refresh } = RANGES[range];
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let loading = false;
-    let due = true;
-    const load = () => {
-      if (loading || document.visibilityState === "hidden") {
-        return;
-      }
-      loading = true;
-      due = false;
-      api.extended
-        .dnsLogStats({ since: Date.now() - span }, bucket, 8, controller.signal)
-        .then(
-          (result) => {
-            setStats(result);
-            setLoadedRange(range);
-          },
-          (error: unknown) => {
-            if (!controller.signal.aborted) {
-              setLoadedRange(range);
-              showError(error);
-            }
-          },
-        )
-        .finally(() => {
-          loading = false;
-          if (!controller.signal.aborted) {
-            timer = setTimeout(() => {
-              timer = null;
-              due = true;
-              load();
-            }, refresh);
-          }
-        });
-    };
-    const onVisibility = () => {
-      if (due) {
-        load();
-      }
-    };
-    load();
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      controller.abort();
-      document.removeEventListener("visibilitychange", onVisibility);
-      if (timer !== null) {
-        clearTimeout(timer);
-      }
-    };
-  }, [api, range]);
-  return { stats, loading: loadedRange !== range };
 }
 
 function sumStatuses(statuses: Record<string, bigint> | undefined, keys: string[]): number {

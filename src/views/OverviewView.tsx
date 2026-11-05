@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import {
   formatBytes,
@@ -16,13 +16,13 @@ import { navigate, useApi, useNow } from "../app/context";
 import { showError } from "../app/errorStore";
 import { usePendingValue } from "../app/hooks";
 import { useI18n } from "../app/i18n";
+import { useDnsStats } from "../app/useDnsStats";
 import { Board, Meter, Metric, Panel, PanelHead } from "../components/Board";
 import { BarTooltip, LatencyScale, SmoothLine, TrafficStems, useElementWidth } from "../components/charts";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamBanner } from "../components/StreamBanner";
 import { Button, Dialog, EmptyState, Select, Spinner } from "../components/ui";
-import type { DNSQueryLogStats } from "../gen/daemon/extended_service_pb";
 import { ServiceStatus_Type, type Group } from "../gen/daemon/started_service_pb";
 import { loadStoredString, saveStoredString } from "../lib/storage";
 import { cx } from "../lib/cx";
@@ -512,26 +512,15 @@ function DnsSummaryPanel() {
   const api = useApi();
   const { t, language } = useI18n();
   const cache = useExtension("dns_cache");
-  const [stats, setStats] = useState<DNSQueryLogStats | null>(null);
+  // Loaded when the overview opens and on refresh, not polled: each load
+  // reads a day of the query log.
+  const { stats, loading, reload } = useDnsStats({ span: DAY_MS, bucket: 3600, top: 5, quiet: true });
   const [flushing, setFlushing] = useState(false);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const load = () => {
-      api.extended
-        .dnsLogStats({ since: Date.now() - DAY_MS }, 3600, 5, controller.signal)
-        .then(setStats, () => {});
-    };
-    load();
-    const timer = setInterval(load, 30_000);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [api]);
-
   const total = Number(stats?.total ?? 0);
-  const blocked = Number(stats?.statuses.rejected ?? 0n) + Number(stats?.statuses.predefined ?? 0n);
+  // Policy rules, such as one answering every AAAA query, and rewrites are
+  // not blocks.
+  const blocked = Number(stats?.blocked ?? 0n);
   const cached = Number(stats?.statuses.cached ?? 0n) + Number(stats?.statuses.optimistic ?? 0n);
   const buckets = stats?.buckets ?? [];
   const bucketMax = Math.max(...buckets.map((bucket) => Number(bucket.total)), 1);
@@ -564,6 +553,9 @@ function DnsSummaryPanel() {
                 {t("Flush cache")}
               </Button>
             )}
+            <Button size="small" disabled={loading} onClick={reload} aria-label={t("Refresh")} title={t("Refresh")}>
+              {loading ? <Spinner /> : <Icon name="sync" size={13} />}
+            </Button>
             <button type="button" className={styles.linkButton} onClick={() => navigate("dns")}>
               {t("Query log")}
               <Icon name="keyboard_arrow_right" size={14} />
@@ -607,7 +599,7 @@ function DnsSummaryPanel() {
       >
         {buckets.map((bucket, index) => {
           const value = Number(bucket.total);
-          const bucketBlocked = Number(bucket.statuses.rejected ?? 0n) + Number(bucket.statuses.predefined ?? 0n);
+          const bucketBlocked = Number(bucket.blocked);
           return (
             <span
               key={String(bucket.time)}
@@ -626,7 +618,7 @@ function DnsSummaryPanel() {
             <div className="tooltip-rows">
               <span>{t("Blocked")}</span>
               <span>
-                {(Number(hovered.statuses.rejected ?? 0n) + Number(hovered.statuses.predefined ?? 0n)).toLocaleString()}
+                {Number(hovered.blocked).toLocaleString()}
               </span>
             </div>
             <div className="tooltip-meta">

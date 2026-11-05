@@ -545,6 +545,7 @@ export const TRANSLATIONS = {
   "Clients {client} · internal {internal}": { "zh-Hans": "客户端 {client} · 内部 {internal}" },
   "{count} more answered by policy or rewrite rules": { "zh-Hans": "另有 {count} 次由策略或改写规则应答" },
   "rewrite": { "zh-Hans": "改写" },
+  "Refresh": { "zh-Hans": "刷新" },
   "Policy {policy} · rewritten {rewritten}": { "zh-Hans": "策略 {policy} · 改写 {rewritten}" },
   "Top clients": { "zh-Hans": "客户端排行" },
   "Top domains": { "zh-Hans": "域名排行" },
