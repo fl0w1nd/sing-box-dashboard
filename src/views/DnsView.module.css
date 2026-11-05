@@ -330,44 +330,35 @@
   border-radius: var(--radius-board);
 }
 
+/* A fixed layout takes the column widths from the header, so rows added
+   live do not make the browser measure every row again. */
+.log-table {
+  table-layout: fixed;
+}
+
 .log-table td {
   padding-top: var(--space-6);
   padding-bottom: var(--space-6);
 }
 
 .log-row td {
-  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.log-table td:nth-child(1) {
-  width: 80px;
-  max-width: none;
-}
+.log-table th:nth-child(1) { width: 88px; }
 
-.log-table td:nth-child(2) { width: 28%; }
+.log-table th:nth-child(2) { width: 28%; }
 
-.log-table td:nth-child(3) {
-  width: 72px;
-  max-width: none;
-}
+.log-table th:nth-child(3) { width: 72px; }
 
-.log-table td:nth-child(4) {
-  width: 96px;
-  max-width: none;
-}
+.log-table th:nth-child(4) { width: 96px; }
 
-.log-table td:nth-child(5) {
-  width: 14%;
-  }
+.log-table th:nth-child(5) { width: 14%; }
 
-.log-table td:nth-child(6) { width: 10%;
-}
+.log-table th:nth-child(6) { width: 10%; }
 
-.log-table td:nth-child(8) {
-  width: 80px;
-  max-width: none;
-}
-
+.log-table th:nth-child(8) { width: 88px; }
 
 .domain {
   overflow: hidden;
@@ -490,7 +481,22 @@
   .log-table th:nth-child(6),
   .log-table td:nth-child(6),
   .log-table th:nth-child(7),
-  .log-table td:nth-child(7) {
+  .log-table td:nth-child(7),
+  .log-table th:nth-child(8),
+  .log-table td:nth-child(8) {
     display: none;
   }
+
+  .log-table th,
+  .log-table td {
+    padding-inline: var(--space-6);
+  }
+
+  .log-table th:nth-child(1) { width: 78px; }
+
+  .log-table th:nth-child(2) { width: auto; }
+
+  .log-table th:nth-child(3) { width: 52px; }
+
+  .log-table th:nth-child(4) { width: 60px; }
 }

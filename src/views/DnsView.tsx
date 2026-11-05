@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { DNSQueryFilter } from "../api/extended";
 import { formatBytes, formatClockTime, formatDateTime } from "../api/format";
@@ -37,14 +37,18 @@ import { cx } from "../lib/cx";
 import styles from "./DnsView.module.css";
 
 const PAGE_SIZE = 100;
-const LIVE_MAX_ENTRIES = 1000;
+// Live updates insert rows at the top, which makes the browser lay out and
+// paint every row below again, so the live log keeps fewer rows; older ones
+// are paged from the core.
+const LIVE_MAX_ENTRIES = 200;
 
 type Range = "1h" | "24h" | "7d";
 
-const RANGES: Record<Range, { span: number; bucket: number }> = {
-  "1h": { span: 3600_000, bucket: 120 },
-  "24h": { span: 86_400_000, bucket: 3600 },
-  "7d": { span: 7 * 86_400_000, bucket: 6 * 3600 },
+// refresh is in milliseconds.
+const RANGES: Record<Range, { span: number; bucket: number; refresh: number }> = {
+  "1h": { span: 3600_000, bucket: 120, refresh: 30_000 },
+  "24h": { span: 86_400_000, bucket: 3600, refresh: 60_000 },
+  "7d": { span: 7 * 86_400_000, bucket: 6 * 3600, refresh: 300_000 },
 };
 
 const STATUSES = [
@@ -316,14 +320,26 @@ function DnsContent(props: { storage: string }) {
 
 // `loading` covers the first answer for a range, not the quiet refreshes
 // that follow it, so switching ranges is visibly in progress.
+//
+// Each refresh makes the core read the log of the whole range, so refreshes
+// wait for the previous answer, come less often for longer ranges, where a
+// minute changes little, and stop while the page is hidden.
 function useStats(range: Range): { stats: DNSQueryLogStats | null; loading: boolean } {
   const api = useApi();
   const [stats, setStats] = useState<DNSQueryLogStats | null>(null);
   const [loadedRange, setLoadedRange] = useState<Range | null>(null);
   useEffect(() => {
     const controller = new AbortController();
+    const { span, bucket, refresh } = RANGES[range];
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let loading = false;
+    let due = true;
     const load = () => {
-      const { span, bucket } = RANGES[range];
+      if (loading || document.visibilityState === "hidden") {
+        return;
+      }
+      loading = true;
+      due = false;
       api.extended
         .dnsLogStats({ since: Date.now() - span }, bucket, 8, controller.signal)
         .then(
@@ -337,13 +353,31 @@ function useStats(range: Range): { stats: DNSQueryLogStats | null; loading: bool
               showError(error);
             }
           },
-        );
+        )
+        .finally(() => {
+          loading = false;
+          if (!controller.signal.aborted) {
+            timer = setTimeout(() => {
+              timer = null;
+              due = true;
+              load();
+            }, refresh);
+          }
+        });
+    };
+    const onVisibility = () => {
+      if (due) {
+        load();
+      }
     };
     load();
-    const timer = setInterval(load, 15_000);
+    document.addEventListener("visibilitychange", onVisibility);
     return () => {
       controller.abort();
-      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
     };
   }, [api, range]);
   return { stats, loading: loadedRange !== range };
@@ -739,10 +773,16 @@ function UpstreamsPanel(props: { stats: DNSQueryLogStats | null; onPick: (server
 
 /* ------------------------------------------------------------ query log */
 
+interface LogPage {
+  entries: DNSQueryLogEntry[];
+  // The cursor of the next page, or zero when there is none: the ID of the
+  // oldest entry shown, since the core pages by it.
+  next: bigint;
+}
+
 function useQueryLog(filter: DNSQueryFilter, live: boolean) {
   const api = useApi();
-  const [entries, setEntries] = useState<DNSQueryLogEntry[]>([]);
-  const [next, setNext] = useState<bigint>(0n);
+  const [log, setLog] = useState<LogPage>({ entries: [], next: 0n });
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const key = JSON.stringify(filter);
@@ -753,10 +793,7 @@ function useQueryLog(filter: DNSQueryFilter, live: boolean) {
     api.extended
       .queryDnsLog(filter, 0n, PAGE_SIZE, controller.signal)
       .then(
-        (page) => {
-          setEntries(page.entries);
-          setNext(page.next);
-        },
+        (page) => setLog({ entries: page.entries, next: page.next }),
         (error: unknown) => {
           if (!controller.signal.aborted) {
             showError(error);
@@ -787,10 +824,15 @@ function useQueryLog(filter: DNSQueryFilter, live: boolean) {
             flush = null;
             const fresh = buffer.reverse();
             buffer = [];
-            setEntries((current) => {
-              const seen = new Set(current.map((item) => item.id));
-              const merged = fresh.filter((item) => !seen.has(item.id)).concat(current);
-              return merged.length > LIVE_MAX_ENTRIES ? merged.slice(0, LIVE_MAX_ENTRIES) : merged;
+            setLog((current) => {
+              const seen = new Set(current.entries.map((item) => item.id));
+              const merged = fresh.filter((item) => !seen.has(item.id)).concat(current.entries);
+              if (merged.length <= LIVE_MAX_ENTRIES) {
+                return { entries: merged, next: current.next };
+              }
+              // The dropped entries are paged again from the oldest kept.
+              const kept = merged.slice(0, LIVE_MAX_ENTRIES);
+              return { entries: kept, next: kept[kept.length - 1].id };
             });
           }, 400);
         }
@@ -807,23 +849,30 @@ function useQueryLog(filter: DNSQueryFilter, live: boolean) {
   }, [api, key, live]);
 
   const loadMore = () => {
-    if (next === 0n || loadingMore) {
+    const cursor = log.next;
+    if (cursor === 0n || loadingMore) {
       return;
     }
     setLoadingMore(true);
     api.extended
-      .queryDnsLog(filter, next, PAGE_SIZE)
+      .queryDnsLog(filter, cursor, PAGE_SIZE)
       .then((page) => {
-        setEntries((current) => {
-          const seen = new Set(current.map((item) => item.id));
-          return current.concat(page.entries.filter((item) => !seen.has(item.id)));
+        setLog((current) => {
+          // Live updates dropped entries meanwhile; the page would leave a gap.
+          if (current.next !== cursor) {
+            return current;
+          }
+          const seen = new Set(current.entries.map((item) => item.id));
+          return {
+            entries: current.entries.concat(page.entries.filter((item) => !seen.has(item.id))),
+            next: page.next,
+          };
         });
-        setNext(page.next);
       }, showError)
       .finally(() => setLoadingMore(false));
   };
 
-  return { entries, loading, hasMore: next !== 0n, loadingMore, loadMore };
+  return { entries: log.entries, loading, hasMore: log.next !== 0n, loadingMore, loadMore };
 }
 
 function QueryLog(props: {
@@ -934,7 +983,7 @@ function QueryLog(props: {
               </thead>
               <tbody>
                 {log.entries.map((entry) => (
-                  <LogRow key={String(entry.id)} entry={entry} onOpen={() => setSelected(entry)} />
+                  <LogRow key={String(entry.id)} entry={entry} onOpen={setSelected} />
                 ))}
               </tbody>
             </table>
@@ -959,12 +1008,14 @@ function entryServer(entry: DNSQueryLogEntry): string {
   return last?.server ?? "";
 }
 
-function LogRow(props: { entry: DNSQueryLogEntry; onOpen: () => void }) {
+// Rows are memoized: live updates prepend entries every few hundred
+// milliseconds, and the rows already shown do not change.
+const LogRow = memo(function LogRow(props: { entry: DNSQueryLogEntry; onOpen: (entry: DNSQueryLogEntry) => void }) {
   const { t } = useI18n();
   const entry = props.entry;
   const answer = entry.error !== "" ? entry.error : entry.answers.join(", ") || entry.rcode;
   return (
-    <tr className={styles.logRow} onClick={props.onOpen}>
+    <tr className={styles.logRow} onClick={() => props.onOpen(entry)}>
       <td className="mono faint">{formatClockTime(Number(entry.time))}</td>
       <td className={styles.domain}>
         <span title={entry.domain}>{entry.domain}</span>
@@ -984,7 +1035,7 @@ function LogRow(props: { entry: DNSQueryLogEntry; onOpen: () => void }) {
       <td className={cx(styles.num, "mono")}>{formatMicros(entry.duration)}</td>
     </tr>
   );
-}
+});
 
 function EntryDetail(props: { entry: DNSQueryLogEntry; onClose: () => void }) {
   const { t, language } = useI18n();
