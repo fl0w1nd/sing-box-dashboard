@@ -239,3 +239,27 @@ export function natFilteringTone(value: number): DelayTone {
       return "neutral";
   }
 }
+
+const INBOUND_TYPES: Record<string, string> = {
+  tun: "TUN",
+  mixed: "Mixed",
+  socks: "SOCKS",
+  http: "HTTP",
+  redirect: "Redirect",
+  tproxy: "TProxy",
+  direct: "Direct",
+  tailscale: "Tailscale",
+  shadowsocks: "Shadowsocks",
+  vmess: "VMess",
+  vless: "VLESS",
+  trojan: "Trojan",
+  hysteria2: "Hysteria2",
+  tuic: "TUIC",
+  naive: "Naive",
+  anytls: "AnyTLS",
+  wireguard: "WireGuard",
+};
+
+export function inboundDisplayType(type: string): string {
+  return INBOUND_TYPES[type] ?? type;
+}

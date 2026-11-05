@@ -52,7 +52,7 @@ export type Route =
   | { page: "overview" }
   | { page: "groups" }
   | { page: "providers" }
-  | { page: "connections" }
+  | { page: "connections"; search: string }
   | { page: "dns" }
   | { page: "logs" }
   | { page: "tools" }
@@ -89,7 +89,7 @@ function routeFromHash(locationHash: string): Route {
     case "providers":
       return { page: "providers" };
     case "connections":
-      return { page: "connections" };
+      return { page: "connections", search: query.get("q") ?? "" };
     case "dns":
       return { page: "dns" };
     case "logs":
@@ -543,7 +543,7 @@ function ShellContent(props: ShellProps & { onRetry: () => void }) {
               {route.page === "overview" && <OverviewView />}
               {route.page === "groups" && <GroupsView />}
               {route.page === "providers" && <ProvidersView />}
-              {route.page === "connections" && <ConnectionsView />}
+              {route.page === "connections" && <ConnectionsView key={route.search} initialSearch={route.search} />}
               {route.page === "dns" && <DnsView />}
               {route.page === "logs" && <LogsView />}
               {route.page === "tools" && <ToolsView />}

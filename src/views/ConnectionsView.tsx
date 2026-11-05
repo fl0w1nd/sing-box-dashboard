@@ -41,7 +41,7 @@ const SORT_OPTIONS: { value: ConnectionSortMode; label: MessageKey }[] = [
   { value: "trafficTotal", label: "By traffic total" },
 ];
 
-export function ConnectionsView() {
+export function ConnectionsView(props: { initialSearch?: string }) {
   const api = useApi();
   const { t } = useI18n();
   const connections = useStream(api.connections);
@@ -49,7 +49,7 @@ export function ConnectionsView() {
   const now = useNow(1000);
   const [stateFilter, setStateFilter] = useState<ConnectionStateFilter>(loadConnectionStateFilter);
   const [sortMode, setSortMode] = useState<ConnectionSortMode>(loadConnectionSortMode);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(props.initialSearch ?? "");
   const [detailId, setDetailId] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [hovering, setHovering] = useState(false);
@@ -292,7 +292,9 @@ function matchesSearch(row: ConnectionRow, search: string): boolean {
     return true;
   }
   const connection = row.connection;
-  for (const token of query.split(/\s+/)) {
+  // Values with spaces are quoted: outbound:"🇯🇵 TYO 01".
+  for (const raw of query.match(/(?:[^\s"]+|"[^"]*")+/g) ?? []) {
+    const token = raw.replaceAll('"', "");
     const separator = token.indexOf(":");
     let matched: boolean;
     if (separator > 0) {
@@ -317,6 +319,17 @@ function matchesSearch(row: ConnectionRow, search: string): boolean {
         case "outbound":
           matched = connection.outbound.toLowerCase().includes(value);
           break;
+        case "chain":
+          matched = connection.chainList.some((tag) => tag.toLowerCase() === value);
+          break;
+        case "process": {
+          const info = connection.processInfo;
+          matched =
+            info !== undefined &&
+            (info.processPath.toLowerCase().includes(value) ||
+              info.packageNames.some((name) => name.toLowerCase().includes(value)));
+          break;
+        }
         default:
           matched = plainMatch(row, token.toLowerCase());
           break;

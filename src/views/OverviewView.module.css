@@ -350,3 +350,196 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Board layout: at narrow widths the route panel would sit alone on its
+   row, so later half-width panels fill in beside it. */
+
+.board {
+  grid-auto-flow: row dense;
+}
+
+.core-wide .core-rows {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-32);
+}
+
+.core-wide .core-row + .core-row {
+  padding-top: 0;
+  margin-top: 0;
+  border-top: 0;
+}
+
+@media (max-width: 1180px) {
+  .board > .core-wide {
+    grid-column: span 6;
+  }
+
+  .core-wide .core-rows {
+    display: flex;
+    gap: 0;
+  }
+
+  .core-wide .core-row + .core-row {
+    padding-top: var(--space-16);
+    margin-top: var(--space-16);
+    border-top: 1px solid var(--rule);
+  }
+
+  .board > :global(.panel).providers-panel {
+    grid-column: span 12;
+  }
+}
+
+@media (max-width: 720px) {
+  .board > .core-wide {
+    grid-column: span 12;
+  }
+}
+
+/* Topology */
+
+.topology-panel {
+  padding-bottom: var(--space-24);
+}
+
+.topology-rates {
+  display: inline-flex;
+  gap: var(--space-12);
+  margin-inline-end: var(--space-8);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.topology-rates > span {
+  display: inline-flex;
+  gap: var(--space-6);
+  align-items: center;
+}
+
+.core-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--good);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--good-soft);
+}
+
+.detail-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-16);
+  padding: var(--space-4) 0 var(--space-20);
+}
+
+.detail-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-row {
+  display: flex;
+  gap: var(--space-12);
+  align-items: center;
+  min-height: 36px;
+  padding: var(--space-6) 0;
+  font: inherit;
+  color: var(--text);
+  text-align: start;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.detail-row:last-child {
+  border-bottom: 0;
+}
+
+.detail-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-base);
+  white-space: nowrap;
+}
+
+.detail-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-xs);
+  color: var(--text-faint);
+}
+
+.detail-rate {
+  flex-shrink: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.member-row {
+  display: flex;
+  flex-direction: row;
+  padding-inline: var(--space-8);
+  border-radius: var(--radius-sm);
+}
+
+.member-row .detail-main {
+  display: block;
+}
+
+.member-row:not(:disabled) {
+  cursor: pointer;
+}
+
+.member-row:not(:disabled):hover {
+  background: var(--hover);
+}
+
+.member-marker {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+}
+
+.member-current .member-marker {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.member-current .detail-main {
+  font-weight: var(--weight-medium);
+}
+
+.good {
+  color: var(--good);
+}
+
+.medium {
+  color: var(--medium);
+}
+
+.bad {
+  color: var(--bad);
+}
+
+.member-flag {
+  margin-inline-end: var(--space-4);
+}
+
+.detail-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

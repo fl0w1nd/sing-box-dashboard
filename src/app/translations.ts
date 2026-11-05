@@ -589,6 +589,19 @@ export const TRANSLATIONS = {
   "Flush the resolver cache on demand": { "zh-Hans": "按需清空 DNS 缓存" },
   "Reach Tailscale peers through DERP only": { "zh-Hans": "Tailscale 对端仅经 DERP 中继连接" },
   "Not reported": { "zh-Hans": "未提供" },
+  "Traffic topology": { "zh-Hans": "流量拓扑" },
+  "{count} active connections from {sources} sources": { "zh-Hans": "{sources} 个来源，{count} 个活动连接" },
+  "Hover a node to trace its paths": { "zh-Hans": "悬停节点查看路径" },
+  "Sources": { "zh-Hans": "来源" },
+  "Exits": { "zh-Hans": "出口" },
+  "Internet": { "zh-Hans": "公网" },
+  "Localhost": { "zh-Hans": "本机" },
+  "{count} more": { "zh-Hans": "其他 {count} 个" },
+  "{count} connections": { "zh-Hans": "{count} 个连接" },
+  "{count} conns": { "zh-Hans": "{count} 连接" },
+  "Members": { "zh-Hans": "成员" },
+  "Active connections": { "zh-Hans": "活动连接" },
+  "Show in Connections": { "zh-Hans": "在连接页查看" },
 } as const satisfies Record<string, Record<TranslatedLanguage, string | PluralForms>>;
 
 export type MessageKey = keyof typeof TRANSLATIONS;

@@ -5,6 +5,7 @@ import {
   formatDurationMs,
   formatMemoryBytes,
   formatRelativeTime,
+  inboundDisplayType,
   proxyDisplayType,
   splitNodeTag,
   urlTestDelayTone,
@@ -12,20 +13,32 @@ import {
 import { STATUS_HISTORY_LENGTH } from "../api/daemon";
 import { useStream } from "../api/stream";
 import { useExtension } from "../app/capabilities";
-import { navigate, useApi, useNow } from "../app/context";
+import { navigate, useApi, useIsMobile, useNow } from "../app/context";
 import { showError } from "../app/errorStore";
-import { usePendingValue } from "../app/hooks";
-import { useI18n } from "../app/i18n";
+import { usePendingValue, useUnaryOnce } from "../app/hooks";
+import { useI18n, type MessageKey } from "../app/i18n";
 import { useDnsStats } from "../app/useDnsStats";
 import { Board, Meter, Metric, Panel, PanelHead } from "../components/Board";
 import { BarTooltip, LatencyScale, SmoothLine, TrafficStems, useElementWidth } from "../components/charts";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamBanner } from "../components/StreamBanner";
-import { Button, Dialog, EmptyState, Select, Spinner } from "../components/ui";
+import { Topology, useTopologyLabel } from "../components/Topology";
+import { Badge, Button, DataLine, DetailSection, DetailShell, Dialog, EmptyState, Select, Spinner } from "../components/ui";
 import { ServiceStatus_Type, type Group } from "../gen/daemon/started_service_pb";
 import { loadStoredString, saveStoredString } from "../lib/storage";
 import { cx } from "../lib/cx";
+import {
+  TOPOLOGY_COLUMNS,
+  buildTopology,
+  connectionsThrough,
+  hostOf,
+  nodeRate,
+  processName,
+  type TopologyColumn,
+  type TopologyModel,
+  type TopologyNode,
+} from "../lib/topology";
 import styles from "./OverviewView.module.css";
 
 export function OverviewView() {
@@ -106,11 +119,11 @@ function OverviewBoard() {
   const providers = useExtension("outbound_provider");
   const dnsLog = useExtension("dns_query_log");
   return (
-    <Board>
+    <Board className={styles.board}>
       <TrafficPanel />
       <RoutePanel />
-      <ConnectionsPanel span={providers ? 4 : 6} />
-      <CorePanel span={providers ? 4 : 6} />
+      <TopologyPanel />
+      <CorePanel wide={!providers} />
       {providers && <ProvidersSummaryPanel />}
       {dnsLog && <DnsSummaryPanel />}
     </Board>
@@ -319,9 +332,340 @@ function RoutePanel() {
   );
 }
 
+/* ------------------------------------------------------------- topology */
+
+const EMPTY_TOPOLOGY = buildTopology([]);
+
+const COLUMN_LABELS: Record<TopologyColumn, MessageKey> = {
+  source: "Sources",
+  inbound: "Inbound",
+  group: "Groups",
+  exit: "Exits",
+  internet: "Upstream",
+};
+
+// The connections page search that matches what passes a node, or "" when
+// no single filter does.
+function connectionsFilter(node: TopologyNode): string {
+  if (node.members) {
+    return "";
+  }
+  const quote = (value: string) => (/[\s"]/.test(value) ? `"${value.replaceAll('"', "")}"` : value);
+  switch (node.column) {
+    case "source":
+      if (node.kind === "app") {
+        return `process:${quote(node.label)}`;
+      }
+      if (node.kind === "device" || node.kind === "tailscale") {
+        const address = node.addresses[0] ?? "";
+        return `source:${address.includes(":") ? `[${address}]` : `${address}:`}`;
+      }
+      return "";
+    case "inbound":
+      return node.tag !== "" ? `inbound:${quote(node.tag)}` : "";
+    case "group":
+      return `chain:${quote(node.tag)}`;
+    case "exit":
+      return `outbound:${quote(node.tag)}`;
+    default:
+      return "";
+  }
+}
+
+function connectionsPath(node: TopologyNode): string {
+  const filter = connectionsFilter(node);
+  return filter === "" ? "connections" : `connections?q=${encodeURIComponent(filter)}`;
+}
+
+function TopologyPanel() {
+  const api = useApi();
+  const { t } = useI18n();
+  const isMobile = useIsMobile();
+  const connections = useStream(api.connections);
+  const groups = useStream(api.groups);
+  const info = useUnaryOnce(() => api.serverInfo());
+  const [selected, setSelected] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+
+  // Each model starts from the last one's column order so nodes stay put.
+  const rows = connections.data.rows;
+  const [built, setBuilt] = useState<{ rows: typeof rows | null; model: TopologyModel }>({
+    rows: null,
+    model: EMPTY_TOPOLOGY,
+  });
+  let model = built.model;
+  if (built.rows !== rows) {
+    model = buildTopology(rows.values(), built.model.order);
+    setBuilt({ rows, model });
+  }
+
+  const totals = model.totals;
+  const sources = model.columns.source.reduce((sum, node) => sum + (node.members?.length ?? 1), 0);
+  const core = (
+    <>
+      <span className={styles.coreDot} />
+      <span>sing-box</span>
+      {info && <span className="mono faint">{info.version}</span>}
+    </>
+  );
+
+  return (
+    <Panel className={styles.topologyPanel}>
+      <PanelHead
+        icon="waypoints"
+        title={t("Traffic topology")}
+        subtitle={
+          totals.conns > 0
+            ? t("{count} active connections from {sources} sources", { count: totals.conns, sources })
+            : t("Hover a node to trace its paths")
+        }
+        actions={
+          <>
+            {totals.conns > 0 && !isMobile && (
+              <span className={cx("mono", styles.topologyRates)}>
+                <span>
+                  <span className="swatch down" /> {rate(totals.down)}
+                </span>
+                <span>
+                  <span className="swatch up" /> {rate(totals.up)}
+                </span>
+              </span>
+            )}
+            {!isMobile && (
+              <Button size="small" disabled={totals.conns === 0} onClick={() => setConfirming(true)}>
+                {t("Close all")}
+              </Button>
+            )}
+            <button type="button" className={styles.linkButton} onClick={() => navigate("connections")}>
+              {t("Connections")}
+              <Icon name="keyboard_arrow_right" size={14} />
+            </button>
+          </>
+        }
+      />
+      {!connections.data.loaded ? (
+        <EmptyState icon="waypoints">{t("Loading...")}</EmptyState>
+      ) : totals.conns === 0 ? (
+        <EmptyState icon="waypoints">{t("No active connections")}</EmptyState>
+      ) : (
+        <Topology
+          model={model}
+          groups={groups.data.groups}
+          core={core}
+          selected={selected}
+          onSelect={(node) => {
+            if (isMobile) {
+              navigate(connectionsPath(node));
+            } else {
+              setSelected(node.key);
+            }
+          }}
+        />
+      )}
+      {selected !== null && !isMobile && (
+        <TopologyDetail model={model} nodeKey={selected} groups={groups.data.groups} onClose={() => setSelected(null)} />
+      )}
+      {confirming && (
+        <Dialog onClose={() => setConfirming(false)}>
+          <h3>{t("Close all connections?")}</h3>
+          <p className="dialog-message">{t("Every active connection will be closed. Applications reconnect on their own.")}</p>
+          <div className="row-actions dialog-actions">
+            <Button onClick={() => setConfirming(false)}>{t("Cancel")}</Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setConfirming(false);
+                api.closeAllConnections().catch(showError);
+              }}
+            >
+              {t("Close all")}
+            </Button>
+          </div>
+        </Dialog>
+      )}
+    </Panel>
+  );
+}
+
+function findTopologyNode(model: TopologyModel, key: string): TopologyNode | undefined {
+  for (const column of TOPOLOGY_COLUMNS) {
+    for (const node of model.columns[column]) {
+      if (node.key === key) {
+        return node;
+      }
+      const member = node.members?.find((entry) => entry.key === key);
+      if (member) {
+        return member;
+      }
+    }
+  }
+  return undefined;
+}
+
+const DETAIL_CONNECTIONS = 30;
+
+function TopologyDetail(props: { model: TopologyModel; nodeKey: string; groups: Group[]; onClose: () => void }) {
+  const api = useApi();
+  const { t } = useI18n();
+  const label = useTopologyLabel();
+  const node = findTopologyNode(props.model, props.nodeKey);
+  const [pendingSelection, setPendingSelection] = useState<string | null>(null);
+
+  if (!node) {
+    return (
+      <DetailShell backLabel={t("Overview")} title={t("Traffic topology")} onClose={props.onClose}>
+        <EmptyState icon="waypoints">{t("No active connections")}</EmptyState>
+      </DetailShell>
+    );
+  }
+
+  const passing = connectionsThrough(props.model, node.key);
+  const top = [...passing]
+    .sort(
+      (left, right) =>
+        right.row.uplinkRate + right.row.downlinkRate - (left.row.uplinkRate + left.row.downlinkRate) ||
+        Number(right.row.connection.createdAt - left.row.connection.createdAt),
+    )
+    .slice(0, DETAIL_CONNECTIONS);
+  const group = node.column === "group" ? props.groups.find((entry) => entry.tag === node.tag) : undefined;
+  const filter = connectionsFilter(node);
+
+  return (
+    <DetailShell
+      backLabel={t("Overview")}
+      title={label(node)}
+      accessory={<Badge>{t(COLUMN_LABELS[node.column])}</Badge>}
+      onClose={props.onClose}
+    >
+      <div className={styles.detailStats}>
+        <div>
+          <div className="metric-label">
+            <span className="swatch down" />
+            {t("Download")}
+          </div>
+          <span className={styles.detailValue}>{rate(node.down)}</span>
+        </div>
+        <div>
+          <div className="metric-label">
+            <span className="swatch up" />
+            {t("Upload")}
+          </div>
+          <span className={styles.detailValue}>{rate(node.up)}</span>
+        </div>
+        <div>
+          <div className="metric-label">{t("Connections")}</div>
+          <span className={styles.detailValue}>{node.conns}</span>
+        </div>
+      </div>
+      {(node.type || node.addresses.length > 0) && (
+        <DetailSection title={t("Details")}>
+          {node.type && (
+            <DataLine
+              label={t("Type")}
+              value={node.column === "inbound" ? inboundDisplayType(node.type) : proxyDisplayType(node.type)}
+            />
+          )}
+          {node.column === "source" && node.addresses.length > 0 && (
+            <DataLine label={t("Addresses")} value={node.addresses.join(", ")} mono />
+          )}
+        </DetailSection>
+      )}
+      {node.members && (
+        <DetailSection title={t("Members")}>
+          <div className={styles.detailList}>
+            {node.members.map((member) => (
+              <div key={member.key} className={styles.detailRow}>
+                <span className={styles.detailMain}>{label(member)}</span>
+                <span className={cx("mono", styles.detailRate)}>
+                  {nodeRate(member) > 0 ? rate(nodeRate(member)) : t("{count} connections", { count: member.conns })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </DetailSection>
+      )}
+      {group && (
+        <DetailSection title={`${proxyDisplayType(group.type)} · ${t("{count} nodes", { count: group.items.length })}`}>
+          <div className={styles.detailList}>
+            {group.items.map((item) => {
+              const current = (pendingSelection ?? group.selected) === item.tag;
+              const split = splitNodeTag(item.tag);
+              return (
+                <button
+                  key={item.tag}
+                  type="button"
+                  className={cx(styles.detailRow, styles.memberRow, current && styles.memberCurrent)}
+                  disabled={!group.selectable || current}
+                  onClick={() => {
+                    setPendingSelection(item.tag);
+                    api
+                      .selectOutbound(group.tag, item.tag)
+                      .catch(showError)
+                      .finally(() => setPendingSelection(null));
+                  }}
+                >
+                  <span className={styles.memberMarker} />
+                  <span className={styles.detailMain}>
+                    {split.flag !== "" && <span className={styles.memberFlag}>{split.flag}</span>}
+                    {split.name}
+                  </span>
+                  <span className={cx("mono", styles.detailRate, item.urlTestDelay > 0 && styles[urlTestDelayTone(item.urlTestDelay)])}>
+                    {item.urlTestDelay > 0 ? `${item.urlTestDelay} ms` : proxyDisplayType(item.type)}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </DetailSection>
+      )}
+      <DetailSection
+        title={t("Active connections")}
+        accessory={
+          <button
+            type="button"
+            className={styles.linkButton}
+            onClick={() => navigate(filter === "" ? "connections" : `connections?q=${encodeURIComponent(filter)}`)}
+          >
+            {t("Show in Connections")}
+            <Icon name="keyboard_arrow_right" size={14} />
+          </button>
+        }
+      >
+        <div className={styles.detailList}>
+          {top.map(({ row, chain }) => {
+            const connection = row.connection;
+            const value = row.uplinkRate + row.downlinkRate;
+            const process = processName(connection);
+            const route = [
+              node.column !== "source" ? (process !== "" ? process : hostOf(connection.source)) : "",
+              chain.join(" → "),
+            ].filter((part) => part !== "");
+            return (
+              <div key={connection.id} className={styles.detailRow}>
+                <span className={styles.detailMain}>
+                  <span className={styles.detailTitle}>{connection.domain || connection.destination}</span>
+                  <span className={styles.detailSub}>
+                    {connection.network.toUpperCase()} · {route.join(" · ")}
+                  </span>
+                </span>
+                <span className={cx("mono", styles.detailRate, value === 0 && "faint")}>
+                  {value > 0 ? rate(value) : "—"}
+                </span>
+              </div>
+            );
+          })}
+          {passing.length > top.length && (
+            <div className="metric-foot">{t("{count} more", { count: passing.length - top.length })}</div>
+          )}
+        </div>
+      </DetailSection>
+    </DetailShell>
+  );
+}
+
 /* ----------------------------------------------------------------- core */
 
-function CorePanel(props: { span: 4 | 6 }) {
+function CorePanel(props: { wide: boolean }) {
   const api = useApi();
   const { t } = useI18n();
   const status = useStream(api.status);
@@ -332,7 +676,7 @@ function CorePanel(props: { span: 4 | 6 }) {
   const memoryPeak = memory.length > 0 ? formatMemoryBytes(Math.max(...memory)) : "—";
 
   return (
-    <Panel span={props.span}>
+    <Panel span={props.wide ? 12 : 6} className={props.wide ? styles.coreWide : undefined}>
       <PanelHead icon="memory" title={t("Core")} />
       <div className={styles.coreRows}>
         <div className={styles.coreRow}>
@@ -362,80 +706,6 @@ function CorePanel(props: { span: 4 | 6 }) {
   );
 }
 
-/* ---------------------------------------------------------- connections */
-
-function ConnectionsPanel(props: { span: 4 | 6 }) {
-  const api = useApi();
-  const { t } = useI18n();
-  const status = useStream(api.status);
-  const [confirming, setConfirming] = useState(false);
-  const inbound = status.data.current?.connectionsIn ?? 0;
-  const outbound = status.data.current?.connectionsOut ?? 0;
-  const total = inbound + outbound;
-  const share = total > 0 ? inbound / total : 0.5;
-
-  return (
-    <Panel span={props.span}>
-      <PanelHead
-        icon="hub"
-        title={t("Connections")}
-        actions={
-          <button type="button" className={styles.linkButton} onClick={() => navigate("connections")}>
-            {t("View all")}
-            <Icon name="keyboard_arrow_right" size={14} />
-          </button>
-        }
-      />
-      <div className={styles.connectionsSplit}>
-        <div>
-          <div className="metric-label">
-            <span className="swatch down" />
-            {t("Inbound")}
-          </div>
-          <Metric value={status.data.current ? inbound : "—"} size="large" />
-        </div>
-        <div className={styles.connectionsDivider} />
-        <div>
-          <div className="metric-label">
-            <span className="swatch up" />
-            {t("Outbound")}
-          </div>
-          <Metric value={status.data.current ? outbound : "—"} size="large" />
-        </div>
-      </div>
-      <div className={styles.flexFill} />
-      <div className={styles.shareBar}>
-        <span className={styles.shareIn} style={{ flexGrow: share }} />
-        <span className={styles.shareOut} style={{ flexGrow: 1 - share }} />
-      </div>
-      <div className={styles.connectionsFoot}>
-        <span className="metric-foot">{t("{percent}% inbound", { percent: (share * 100).toFixed(1) })}</span>
-        <Button size="small" disabled={inbound === 0} onClick={() => setConfirming(true)}>
-          {t("Close all")}
-        </Button>
-      </div>
-      {confirming && (
-        <Dialog onClose={() => setConfirming(false)}>
-          <h3>{t("Close all connections?")}</h3>
-          <p className="dialog-message">{t("Every active connection will be closed. Applications reconnect on their own.")}</p>
-          <div className="row-actions dialog-actions">
-            <Button onClick={() => setConfirming(false)}>{t("Cancel")}</Button>
-            <Button
-              variant="danger"
-              onClick={() => {
-                setConfirming(false);
-                api.closeAllConnections().catch(showError);
-              }}
-            >
-              {t("Close all")}
-            </Button>
-          </div>
-        </Dialog>
-      )}
-    </Panel>
-  );
-}
-
 /* ------------------------------------------------------------ providers */
 
 function ProvidersSummaryPanel() {
@@ -446,7 +716,7 @@ function ProvidersSummaryPanel() {
   const list = providers.data.providers;
 
   return (
-    <Panel span={4}>
+    <Panel span={6} className={styles.providersPanel}>
       <PanelHead
         icon="provider"
         title={t("Providers")}
