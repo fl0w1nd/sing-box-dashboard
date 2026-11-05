@@ -369,6 +369,10 @@ export function Select<T extends string | number>(props: {
   disabled?: boolean;
   inline?: boolean;
   placeholder?: ReactNode;
+  // Custom trigger content: the whole row becomes the picker, with the
+  // chevron at its far edge instead of glued to the text.
+  display?: ReactNode;
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -417,15 +421,23 @@ export function Select<T extends string | number>(props: {
       <button
         id={props.id}
         type="button"
-        className={props.inline ? "select inline" : "select"}
+        className={props.display !== undefined ? "picker-row" : props.inline ? "select inline" : "select"}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={props.ariaLabel}
         disabled={props.disabled}
         onClick={() => setOpen(!open)}
       >
-        <span className={selected ? "select-value" : "select-value select-placeholder"}>
-          {selected ? selected.label : props.placeholder}
-        </span>
+        {props.display !== undefined ? (
+          <>
+            <span className="picker-row-body">{props.display}</span>
+            <Icon name="unfold_more" size={14} className="picker-row-chevron" />
+          </>
+        ) : (
+          <span className={selected ? "select-value" : "select-value select-placeholder"}>
+            {selected ? selected.label : props.placeholder}
+          </span>
+        )}
       </button>
       {open && (
         <div

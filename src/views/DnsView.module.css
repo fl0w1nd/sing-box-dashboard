@@ -65,6 +65,7 @@
 .key-rest { background: var(--ink-4); }
 
 .histogram {
+  position: relative;
   display: flex;
   gap: var(--space-2);
   align-items: flex-end;
@@ -88,6 +89,7 @@
   overflow: hidden;
   background: var(--neutral-soft);
   border-radius: 2px 2px 0 0;
+  transition: opacity var(--transition-fast);
 }
 
 .bar-stack > span {
@@ -100,8 +102,8 @@
 .bar-cached { background: var(--cobalt); }
 .bar-rest { background: var(--ink-4); }
 
-.bar:hover .bar-stack {
-  filter: brightness(0.92);
+.bar-dimmed .bar-stack {
+  opacity: 0.45;
 }
 
 .histogram-foot {

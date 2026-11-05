@@ -213,59 +213,6 @@
   box-shadow: none;
 }
 
-.tabs {
-  display: flex;
-  gap: var(--space-24);
-  overflow-x: auto;
-  scrollbar-width: none;
-  border-bottom: 1px solid var(--rule);
-}
-
-.tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.tab {
-  position: relative;
-  display: inline-flex;
-  flex-shrink: 0;
-  gap: var(--space-6);
-  align-items: baseline;
-  padding: var(--space-8) 0 var(--space-10);
-  font-size: var(--text-md);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  transition: color var(--transition-fast);
-}
-
-.tab:hover {
-  color: var(--text);
-}
-
-.tab.active {
-  font-weight: var(--weight-medium);
-  color: var(--text);
-}
-
-.tab.active::after {
-  position: absolute;
-  inset-inline: 0;
-  bottom: -1px;
-  height: 2px;
-  content: "";
-  background: var(--accent);
-  border-radius: 2px 2px 0 0;
-}
-
-.tab-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-faint);
-}
-
 .chip {
   display: inline-flex;
   gap: var(--space-6);
@@ -380,6 +327,34 @@
   background: var(--card);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-overlay);
+}
+
+.tooltip-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-lg);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.tooltip-rows {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: var(--space-2) var(--space-12);
+  margin-top: var(--space-6);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.tooltip-rows > :nth-child(even) {
+  font-family: var(--font-mono);
+  text-align: end;
+}
+
+.tooltip-meta {
+  margin-top: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-faint);
 }
 
 /* Indeterminate progress along the top edge of a busy container. */

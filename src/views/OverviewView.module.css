@@ -110,37 +110,21 @@
 
 .chain-text {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: var(--space-2);
   min-width: 0;
 }
 
 .chain-text :global(.select-anchor) {
-  align-self: flex-start;
-  max-width: 100%;
+  width: 100%;
 }
 
-.chain-text :global(.select.inline) {
-  width: auto;
+.chain-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   min-width: 0;
-  max-width: 100%;
-  height: 26px;
-  padding-inline-start: var(--space-8);
-  margin-inline-start: calc(var(--space-8) * -1);
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
-  background-color: transparent;
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.chain-text :global(.select-value) {
-  flex: none;
-}
-
-.chain-text :global(.select.inline):hover {
-  background-color: var(--card);
-  border-color: var(--border-strong);
 }
 
 .chain-title {
@@ -153,6 +137,11 @@
   font-size: var(--text-md);
   font-weight: var(--weight-medium);
   white-space: nowrap;
+}
+
+.chain-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chain-active .chain-title {
@@ -264,39 +253,6 @@
   margin: 0;
 }
 
-/* Latency */
-
-.latency-legend {
-  margin-inline-end: var(--space-8);
-}
-
-.legend-dot {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.legend-good {
-  background: var(--good);
-}
-
-.legend-medium {
-  background: var(--medium);
-}
-
-.legend-bad {
-  border: 1.5px solid var(--bad);
-}
-
-.legend-none {
-  border: 1.5px dashed var(--ink-3);
-}
-
-.stems-wrap {
-  padding-top: var(--space-16);
-}
-
 /* Providers */
 
 .provider-rows {
@@ -334,6 +290,7 @@
 }
 
 .dns-bars {
+  position: relative;
   display: flex;
   gap: var(--space-2);
   align-items: flex-end;
@@ -357,6 +314,7 @@
   overflow: hidden;
   background: var(--ink-4);
   border-radius: 2px 2px 0 0;
+  transition: opacity var(--transition-fast);
 }
 
 .dns-bar > span > span {
@@ -364,8 +322,8 @@
   background: var(--accent);
 }
 
-.dns-bar:hover > span {
-  background: var(--ink-3);
+.dns-bar-dimmed > span {
+  opacity: 0.45;
 }
 
 @media (max-width: 1180px) {
@@ -390,9 +348,5 @@
 @media (max-width: 720px) {
   .dns-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .latency-legend {
-    display: none;
   }
 }

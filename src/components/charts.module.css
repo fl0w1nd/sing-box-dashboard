@@ -62,19 +62,6 @@
   fill: var(--text-faint);
 }
 
-.peak {
-  position: absolute;
-  padding: var(--space-px) var(--space-6);
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--accent-strong);
-  white-space: nowrap;
-  pointer-events: none;
-  background: var(--accent-soft);
-  border-radius: var(--radius-xs);
-  transform: translateX(-50%);
-}
-
 .scale {
   position: absolute;
   inset-inline-start: 0;
@@ -185,155 +172,10 @@
   color: var(--text-faint);
 }
 
-/* Node stems */
+/* Bar tooltip */
 
-.stems {
-  margin: 0 calc(var(--space-8) * -1);
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-
-.stems-track {
-  display: flex;
-  min-width: 100%;
-}
-
-.stem-column {
-  display: flex;
-  flex: 1 0 72px;
-  flex-direction: column;
-  align-items: center;
-  min-width: 72px;
-  max-width: 132px;
-  padding: 0 var(--space-4) var(--space-8);
-  color: var(--text-secondary);
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-md);
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.stem-column:hover {
-  color: var(--text);
-  background: var(--hover);
-}
-
-.stem-static {
-  cursor: default;
-}
-
-.stem-plot {
-  position: relative;
-  flex: 1;
-  width: 100%;
-  border-bottom: 1px solid var(--border-strong);
-}
-
-.stem-line {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  width: 1.5px;
-  background: var(--ink-4);
+.bar-tip {
+  bottom: calc(100% + var(--space-8));
+  min-width: 132px;
   transform: translateX(-50%);
-  transition: height 0.5s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.stem-head {
-  position: absolute;
-  left: 50%;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  transform: translateX(-50%);
-  transition: bottom 0.5s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.head-good {
-  background: var(--good);
-}
-
-.head-medium {
-  background: var(--medium);
-}
-
-.head-bad {
-  background: var(--card);
-  border: 2px solid var(--bad);
-}
-
-.head-none {
-  background: transparent;
-  border: 1.5px dashed var(--ink-3);
-}
-
-.stem-value {
-  position: absolute;
-  left: 50%;
-  font-family: var(--font-mono);
-  font-size: var(--text-2xs);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  transform: translateX(-50%);
-  transition: bottom 0.5s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.stem-label {
-  display: -webkit-box;
-  max-width: 100%;
-  min-height: 32px;
-  margin-top: var(--space-8);
-  overflow: hidden;
-  -webkit-line-clamp: 2;
-  font-size: var(--text-xs);
-  line-height: 1.35;
-  text-align: center;
-  word-break: break-all;
-  -webkit-box-orient: vertical;
-}
-
-.stem-selected {
-  color: var(--text);
-  background: var(--hover);
-}
-
-.stem-selected .stem-line {
-  background: var(--ink);
-}
-
-.stem-selected .stem-label {
-  font-weight: var(--weight-medium);
-}
-
-.stem-selected .stem-plot {
-  border-bottom: 2px solid var(--ink);
-}
-
-.stem-more {
-  color: var(--text-faint);
-}
-
-.stem-more-count {
-  position: absolute;
-  bottom: var(--space-8);
-  left: 50%;
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  transform: translateX(-50%);
-}
-
-.stem-switching .stem-plot {
-  border-bottom-style: dashed;
-}
-
-.stem-switching .stem-head {
-  animation: stem-pulse 0.9s ease-in-out infinite alternate;
-}
-
-@keyframes stem-pulse {
-  to {
-    opacity: 0.3;
-    transform: translateX(-50%) scale(0.7);
-  }
 }

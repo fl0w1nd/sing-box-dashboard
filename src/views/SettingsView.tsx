@@ -34,11 +34,11 @@ import { parseCustomTheme, type Scheme, type TerminalThemeEntry } from "../lib/t
 import styles from "./SettingsView.module.css";
 import { cx } from "../lib/cx";
 
-const EXTENSION_LABELS: Record<string, MessageKey> = {
-  outbound_provider: "Outbound providers",
-  dns_query_log: "DNS query log",
-  dns_cache: "DNS cache",
-  tailscale_force_relay: "Tailscale force relay",
+const EXTENSION_LABELS: Record<string, { label: MessageKey; detail: MessageKey }> = {
+  outbound_provider: { label: "Outbound providers", detail: "Remote subscriptions with traffic and expiry" },
+  dns_query_log: { label: "DNS query log", detail: "Recorded queries with statistics" },
+  dns_cache: { label: "DNS cache", detail: "Flush the resolver cache on demand" },
+  tailscale_force_relay: { label: "Tailscale force relay", detail: "Reach Tailscale peers through DERP only" },
 };
 
 export function SettingsView() {
@@ -60,6 +60,7 @@ export function SettingsView() {
     </MenuItem>,
   );
   const extensionNames = Object.keys(extensions.versions);
+  const [showExtensions, setShowExtensions] = useState(false);
 
   return (
     <div className="page">
@@ -136,26 +137,24 @@ export function SettingsView() {
                   <span className="nav-row-detail">{formatDateTime(startedAt, language)}</span>
                 </div>
               )}
-              <div className="settings-row">
-                <div className={styles.rowText}>
-                  <span className="settings-row-label">{t("Extensions")}</span>
-                  <span className="hint">
-                    {extensionNames.length > 0
-                      ? t("Features of the fl0w1nd/sing-box fork served by this core.")
-                      : t("This core does not serve the extended API; fork features are hidden.")}
+              <button
+                type="button"
+                className="settings-row"
+                disabled={extensionNames.length === 0}
+                onClick={() => setShowExtensions(true)}
+              >
+                <span className="settings-row-label">{t("Extensions")}</span>
+                <span className="nav-row-detail">
+                  {extensionNames.length > 0
+                    ? t("{count} features", { count: extensionNames.length })
+                    : t("Not served")}
+                </span>
+                {extensionNames.length > 0 && (
+                  <span className="settings-row-chevron">
+                    <Icon name="keyboard_arrow_right" size={14} />
                   </span>
-                </div>
-              </div>
-              {extensionNames.map((name) => (
-                <div key={name} className="settings-row">
-                  <span className={cx("settings-row-label", styles.extensionName)}>
-                    {EXTENSION_LABELS[name] ? t(EXTENSION_LABELS[name]) : name}
-                  </span>
-                  <span className="badge outline">
-                    {name} v{extensions.versions[name as keyof typeof extensions.versions]}
-                  </span>
-                </div>
-              ))}
+                )}
+              </button>
             </div>
           </div>
           <div>
@@ -182,6 +181,30 @@ export function SettingsView() {
           </div>
         </div>
       </div>
+      {showExtensions && (
+        <Dialog className={styles.extensionsDialog} onClose={() => setShowExtensions(false)}>
+          <h3>{t("Extensions")}</h3>
+          <p className="dialog-message">{t("Features of the fl0w1nd/sing-box fork served by this core.")}</p>
+          <ul className={styles.extensionList}>
+            {extensionNames.map((name) => (
+              <li key={name} className={styles.extensionItem}>
+                <div className={styles.rowText}>
+                  <span className={styles.extensionLabel}>
+                    {EXTENSION_LABELS[name] ? t(EXTENSION_LABELS[name].label) : name}
+                  </span>
+                  {EXTENSION_LABELS[name] && <span className="hint">{t(EXTENSION_LABELS[name].detail)}</span>}
+                </div>
+                <span className="badge outline mono">
+                  {name} v{extensions.versions[name as keyof typeof extensions.versions]}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="row-actions dialog-actions">
+            <Button onClick={() => setShowExtensions(false)}>{t("Close")}</Button>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

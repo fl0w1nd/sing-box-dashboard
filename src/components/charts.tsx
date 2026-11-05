@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { cx } from "../lib/cx";
 import styles from "./charts.module.css";
@@ -45,7 +45,7 @@ export function TrafficStems(props: {
   capacity: number;
   height?: number;
   format: (value: number) => string;
-  labels: { up: string; down: string; now: string; peak: string };
+  labels: { up: string; down: string; now: string };
 }) {
   const [ref, width] = useElementWidth<HTMLDivElement>();
   const [hover, setHover] = useState<number | null>(null);
@@ -63,16 +63,6 @@ export function TrafficStems(props: {
   const scaleMax = niceCeil(Math.max(...props.up, ...props.down, 1024));
   const xAt = (index: number) => pad + (offset + index) * step;
 
-  let peakIndex = -1;
-  let peakValue = 0;
-  props.up.forEach((value, index) => {
-    const total = value + (props.down[index] ?? 0);
-    if (total > peakValue) {
-      peakValue = total;
-      peakIndex = index;
-    }
-  });
-
   const hovered = hover !== null && hover >= 0 && hover < props.up.length ? hover : null;
 
   return (
@@ -80,6 +70,8 @@ export function TrafficStems(props: {
       ref={ref}
       className={styles.traffic}
       style={{ height }}
+      role="img"
+      aria-label={`${props.labels.up} ${props.format(props.up[props.up.length - 1] ?? 0)}, ${props.labels.down} ${props.format(props.down[props.down.length - 1] ?? 0)}`}
       onPointerMove={(event) => {
         if (step <= 0 || props.up.length === 0) {
           return;
@@ -126,17 +118,6 @@ export function TrafficStems(props: {
             );
           })}
         </svg>
-      )}
-      {width > 0 && peakIndex >= 0 && peakValue > 0 && hovered === null && (
-        <span
-          className={styles.peak}
-          style={{
-            left: xAt(peakIndex),
-            top: mid - ((props.up[peakIndex] ?? 0) / scaleMax) * reach - 30,
-          }}
-        >
-          {props.labels.peak}
-        </span>
       )}
       {width > 0 && (
         <>
@@ -236,13 +217,6 @@ const TICK_TONES: Record<string, string | undefined> = {
   neutral: styles.tickNeutral,
 };
 
-const HEAD_TONES: Record<string, string | undefined> = {
-  good: styles.headGood,
-  medium: styles.headMedium,
-  bad: styles.headBad,
-  neutral: styles.headNone,
-};
-
 export function LatencyScale(props: { delay: number; max: number; tone: string }) {
   const ticks = 48;
   const ratio = props.delay > 0 ? Math.min(1, props.delay / props.max) : 0;
@@ -266,75 +240,17 @@ export function LatencyScale(props: { delay: number; max: number; tone: string }
   );
 }
 
-/* ----------------------------------------------------------- node stems */
+/* ------------------------------------------------------- bar tooltip */
 
-export interface StemNode {
-  tag: string;
-  label: string;
-  delay: number;
-  tone: "good" | "medium" | "bad" | "neutral";
-}
-
-export function NodeStems(props: {
-  nodes: StemNode[];
-  selected: string;
-  switching?: boolean;
-  selectable: boolean;
-  onSelect: (tag: string) => void;
-  height?: number;
-  more?: { count: number; label: string; onOpen: () => void };
-}) {
-  const height = props.height ?? 190;
-  const maxDelay = Math.max(...props.nodes.map((node) => node.delay), 0);
-  const scaleMax = niceCeil(Math.max(maxDelay, 300));
-  const reach = height - 64;
+// The hover card for a row of equal-width bars: centred over the bar,
+// kept inside the chart, value first and the period under it.
+export function BarTooltip(props: { index: number; count: number; width: number; children: ReactNode }) {
+  const half = 80;
+  const center = ((props.index + 0.5) / Math.max(props.count, 1)) * props.width;
+  const left = Math.min(Math.max(center, half), Math.max(props.width - half, half));
   return (
-    <div className={styles.stems}>
-      <div className={styles.stemsTrack} style={{ height }}>
-        {props.nodes.map((node) => {
-          // Square-root scale: one slow node should not flatten the rest.
-          const stem = node.delay > 0 ? Math.max(10, Math.sqrt(Math.min(node.delay, scaleMax) / scaleMax) * reach) : 0;
-          const selected = node.tag === props.selected;
-          return (
-            <button
-              type="button"
-              key={node.tag}
-              className={cx(
-                styles.stemColumn,
-                selected && styles.stemSelected,
-                selected && props.switching && styles.stemSwitching,
-                !props.selectable && styles.stemStatic,
-              )}
-              aria-busy={(selected && props.switching) || undefined}
-              title={node.delay > 0 ? `${node.tag} · ${node.delay} ms` : node.tag}
-              aria-pressed={selected}
-              onClick={() => props.onSelect(node.tag)}
-            >
-              <span className={styles.stemPlot}>
-                {node.delay > 0 && (
-                  <span className={styles.stemValue} style={{ bottom: stem + 12 }}>
-                    {node.delay}
-                  </span>
-                )}
-                <span className={styles.stemLine} style={{ height: stem }} />
-                <span
-                  className={cx(styles.stemHead, node.delay > 0 ? HEAD_TONES[node.tone] : styles.headNone)}
-                  style={{ bottom: stem - 5 }}
-                />
-              </span>
-              <span className={styles.stemLabel}>{node.label}</span>
-            </button>
-          );
-        })}
-        {props.more && props.more.count > 0 && (
-          <button type="button" className={cx(styles.stemColumn, styles.stemMore)} onClick={props.more.onOpen}>
-            <span className={styles.stemPlot}>
-              <span className={styles.stemMoreCount}>+{props.more.count}</span>
-            </span>
-            <span className={styles.stemLabel}>{props.more.label}</span>
-          </button>
-        )}
-      </div>
+    <div className={cx("tooltip-card", styles.barTip)} style={{ left }}>
+      {props.children}
     </div>
   );
 }

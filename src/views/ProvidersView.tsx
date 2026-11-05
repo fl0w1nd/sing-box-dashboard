@@ -107,8 +107,6 @@ function ProviderPanel(props: { provider: OutboundProviderStatus; wide: boolean 
   const query = search.trim().toLowerCase();
   const items = provider.items.filter((item) => query === "" || item.tag.toLowerCase().includes(query));
   const limit = showAll || query !== "" ? items.length : 24;
-  const tested = provider.items.filter((item) => item.urlTestDelay > 0);
-  const average = tested.length > 0 ? Math.round(tested.reduce((sum, item) => sum + item.urlTestDelay, 0) / tested.length) : 0;
 
   const update = () => {
     setUpdating(true);
@@ -188,7 +186,10 @@ function ProviderPanel(props: { provider: OutboundProviderStatus; wide: boolean 
               </div>
             </>
           ) : (
-            <div className={styles.noInfo}>{t("The subscription does not report traffic usage.")}</div>
+            <>
+              <Metric value="—" size="medium" />
+              <div className="metric-foot">{t("Not reported")}</div>
+            </>
           )}
         </div>
         <div className={styles.facts}>
@@ -207,13 +208,6 @@ function ProviderPanel(props: { provider: OutboundProviderStatus; wide: boolean 
             ) : (
               <Metric value="—" size="medium" />
             )}
-          </div>
-          <div>
-            <div className="metric-label">{t("Average latency")}</div>
-            <Metric value={average > 0 ? average : "—"} unit={average > 0 ? "ms" : undefined} size="medium" />
-            <div className="metric-foot">
-              {t("{tested} of {count} tested", { tested: tested.length, count: provider.items.length })}
-            </div>
           </div>
         </div>
       </div>

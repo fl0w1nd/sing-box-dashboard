@@ -800,6 +800,53 @@ button.select:disabled {
   display: inline-block;
 }
 
+/* A whole row that opens a picker: content on the left, chevron at the
+   far edge, the row itself highlighted on hover. */
+.picker-row {
+  display: flex;
+  gap: var(--space-12);
+  align-items: center;
+  width: calc(100% + var(--space-8) * 2);
+  min-width: 0;
+  padding: var(--space-6) var(--space-8);
+  margin: calc(var(--space-6) * -1) calc(var(--space-8) * -1);
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.picker-row:hover,
+.picker-row[aria-expanded="true"] {
+  background: var(--hover);
+}
+
+.picker-row:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.picker-row-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-row-chevron {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  transition: color var(--transition-fast);
+}
+
+.picker-row:hover .picker-row-chevron,
+.picker-row[aria-expanded="true"] .picker-row-chevron {
+  color: var(--text-secondary);
+}
+
 .menu.select-menu {
   max-height: 280px;
   overflow-y: auto;
@@ -1420,4 +1467,9 @@ button.settings-row:focus-visible {
   .input, .select {
       font-size: var(--text-lg);
     }
+}
+
+.brand-mark {
+  display: block;
+  flex-shrink: 0;
 }

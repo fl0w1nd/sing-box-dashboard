@@ -66,31 +66,6 @@ export function Metric(props: {
   );
 }
 
-export function Tabs<T extends string>(props: {
-  options: { value: T; label: ReactNode; count?: number }[];
-  value: T;
-  onChange: (value: T) => void;
-  className?: string;
-}) {
-  return (
-    <div className={cx("tabs", props.className)} role="tablist">
-      {props.options.map((option) => (
-        <button
-          key={option.value}
-          type="button"
-          role="tab"
-          aria-selected={option.value === props.value}
-          className={cx("tab", option.value === props.value && "active")}
-          onClick={() => props.onChange(option.value)}
-        >
-          {option.label}
-          {option.count !== undefined && <span className="tab-count">{option.count}</span>}
-        </button>
-      ))}
-    </div>
-  );
-}
-
 export function Chips<T extends string>(props: {
   options: { value: T; label: ReactNode; count?: number }[];
   value: T;
@@ -141,21 +116,23 @@ export function Meter(props: { value: number; tone?: "accent" | "warn"; label?: 
   );
 }
 
-// The brand mark: two hops joined by a route, the origin in signal colour.
+// The sing-box mark: the official box, drawn flat so it stays crisp at
+// sidebar sizes (same geometry as public/favicon.svg).
 export function BrandMark(props: { size?: number }) {
   const size = props.size ?? 34;
   return (
-    <span className="icon-tile" style={{ width: size, height: size }} aria-hidden="true">
-      <svg width={size * 0.6} height={size * 0.6} viewBox="0 0 24 24" fill="none">
-        <path
-          d="M8.4 15.6c3.6-.6 3.2-6.4 7.2-7.4"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-        <circle cx="6" cy="17.4" r="2.8" fill="var(--accent)" />
-        <circle cx="18.2" cy="6.8" r="2.6" stroke="currentColor" strokeWidth="2" />
-      </svg>
-    </span>
+    <svg className="brand-mark" width={size} height={size} viewBox="242 252 540 570" aria-hidden="true">
+      <path d="M512 262 754.5 402 512 542 269.5 402Z" fill="#42555F" />
+      <path d="M269.5 402 512 542 512 812 269.5 672Z" fill="#232F37" />
+      <path d="M512 542 754.5 402 754.5 672 512 812Z" fill="#34444F" />
+      <path d="M390.75 472 633.25 332" stroke="#141E24" strokeWidth="4" fill="none" />
+      <path d="M512 262 754.5 402" stroke="#66808D" strokeWidth="2.5" fill="none" />
+      <path d="M512 262 269.5 402" stroke="#5A737F" strokeWidth="2.5" fill="none" />
+      <path d="M512 542 512 812" stroke="#445963" strokeWidth="2" fill="none" />
+      <path d="M356.8 351.6 390.75 332 633.25 472 599.3 491.6Z" fill="#99AAB5" />
+      <path d="M390.75 332 424.7 312.4 667.2 452.4 633.25 472Z" fill="#E1E8ED" />
+      <path d="M599.3 491.6 633.25 472 633.25 592 599.3 611.6Z" fill="#8296A1" />
+      <path d="M633.25 472 667.2 452.4 667.2 572.4 633.25 592Z" fill="#CCD6DD" />
+    </svg>
   );
 }

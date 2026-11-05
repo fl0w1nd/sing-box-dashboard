@@ -5,8 +5,6 @@ import {
   formatDurationMs,
   formatMemoryBytes,
   formatRelativeTime,
-  LATENCY_GOOD_MS,
-  LATENCY_MEDIUM_MS,
   proxyDisplayType,
   splitNodeTag,
   urlTestDelayTone,
@@ -18,8 +16,8 @@ import { navigate, useApi, useNow } from "../app/context";
 import { showError } from "../app/errorStore";
 import { usePendingValue } from "../app/hooks";
 import { useI18n } from "../app/i18n";
-import { Board, Meter, Metric, Panel, PanelHead, Tabs } from "../components/Board";
-import { LatencyScale, NodeStems, SmoothLine, TrafficStems, type StemNode } from "../components/charts";
+import { Board, Meter, Metric, Panel, PanelHead } from "../components/Board";
+import { BarTooltip, LatencyScale, SmoothLine, TrafficStems, useElementWidth } from "../components/charts";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import { StreamBanner } from "../components/StreamBanner";
@@ -114,7 +112,6 @@ function OverviewBoard() {
       <ConnectionsPanel span={providers ? 4 : 6} />
       <CorePanel span={providers ? 4 : 6} />
       {providers && <ProvidersSummaryPanel />}
-      <LatencyPanel />
       {dnsLog && <DnsSummaryPanel />}
     </Board>
   );
@@ -179,7 +176,7 @@ function TrafficPanel() {
               down={status.data.downlinkHistory}
               capacity={STATUS_HISTORY_LENGTH}
               format={rate}
-              labels={{ up: t("Upload"), down: t("Download"), now: t("now"), peak: t("peak") }}
+              labels={{ up: t("Upload"), down: t("Download"), now: t("now") }}
             />
           ) : (
             <EmptyState icon="network_check">{t("Traffic statistics are not available")}</EmptyState>
@@ -275,29 +272,35 @@ function RoutePanel() {
             {chain.map((step, index) => {
               const terminal = index === chain.length - 1;
               const split = splitNodeTag(step.tag);
+              const text = (
+                <>
+                  <span className={styles.chainTitle}>
+                    {split.flag !== "" && <span className={styles.flag}>{split.flag}</span>}
+                    <span className={styles.chainName}>{split.name}</span>
+                  </span>
+                  <span className={styles.chainDetail}>
+                    {split.prefix !== "" ? `${split.prefix} · ${step.detail}` : step.detail}
+                  </span>
+                </>
+              );
               return (
                 <li key={step.tag} className={cx(styles.chainStep, terminal && styles.chainActive)}>
                   <span className={styles.chainMarker} />
                   <div className={styles.chainText}>
                     {index === 0 && list.length > 1 ? (
                       <Select
-                        inline
+                        ariaLabel={t("Switch group")}
                         options={list.map((group) => ({ value: group.tag, label: group.tag }))}
                         value={step.tag}
+                        display={<span className={styles.chainPicker}>{text}</span>}
                         onChange={(value) => {
                           saveStoredString(ROUTE_GROUP_KEY, value);
                           setStored(value);
                         }}
                       />
                     ) : (
-                      <span className={styles.chainTitle}>
-                        {split.flag !== "" && <span className={styles.flag}>{split.flag}</span>}
-                        {split.name}
-                      </span>
+                      text
                     )}
-                    <span className={styles.chainDetail}>
-                      {split.prefix !== "" ? `${split.prefix} · ${step.detail}` : step.detail}
-                    </span>
                   </div>
                 </li>
               );
@@ -330,7 +333,7 @@ function CorePanel(props: { span: 4 | 6 }) {
 
   return (
     <Panel span={props.span}>
-      <PanelHead icon="memory" title={t("Core")} subtitle={t("Memory and goroutines")} />
+      <PanelHead icon="memory" title={t("Core")} />
       <div className={styles.coreRows}>
         <div className={styles.coreRow}>
           <div className={styles.coreText}>
@@ -376,7 +379,6 @@ function ConnectionsPanel(props: { span: 4 | 6 }) {
       <PanelHead
         icon="hub"
         title={t("Connections")}
-        subtitle={t("Tracked right now")}
         actions={
           <button type="button" className={styles.linkButton} onClick={() => navigate("connections")}>
             {t("View all")}
@@ -429,124 +431,6 @@ function ConnectionsPanel(props: { span: 4 | 6 }) {
             </Button>
           </div>
         </Dialog>
-      )}
-    </Panel>
-  );
-}
-
-/* -------------------------------------------------------------- latency */
-
-const LATENCY_TAB_KEY = "overview-latency-group";
-const LATENCY_STEM_LIMIT = 16;
-
-function LatencyPanel() {
-  const api = useApi();
-  const { t } = useI18n();
-  const groups = useStream(api.groups);
-  const list = groups.data.groups;
-  const [stored, setStored] = useState(() => loadStoredString(LATENCY_TAB_KEY) ?? "");
-  const [testing, setTesting] = useState<string | null>(null);
-  const group = list.find((entry) => entry.tag === stored) ?? primaryGroup(list);
-  const [selected, setPendingSelection, switching] = usePendingValue(group?.selected ?? "");
-
-  // Fastest first, untested last; the tail beyond the cap lives on the
-  // groups page (the selected node always stays visible).
-  const ranked = [...(group?.items ?? [])].sort(
-    (a, b) => (a.urlTestDelay > 0 ? a.urlTestDelay : Infinity) - (b.urlTestDelay > 0 ? b.urlTestDelay : Infinity),
-  );
-  const shown = ranked.slice(0, LATENCY_STEM_LIMIT);
-  const selectedItem = ranked.find((item) => item.tag === selected);
-  if (selectedItem && !shown.includes(selectedItem)) {
-    shown[shown.length - 1] = selectedItem;
-  }
-  const nodes: StemNode[] = shown.map((item) => {
-    const split = splitNodeTag(item.tag);
-    return {
-      tag: item.tag,
-      label: `${split.flag}${split.flag !== "" ? " " : ""}${split.name}`,
-      delay: item.urlTestDelay,
-      tone: urlTestDelayTone(item.urlTestDelay),
-    };
-  });
-
-  const runTest = () => {
-    if (!group) {
-      return;
-    }
-    const tag = group.tag;
-    setTesting(tag);
-    api
-      .urlTest(tag)
-      .catch(showError)
-      .finally(() => setTesting((current) => (current === tag ? null : current)));
-  };
-
-  return (
-    <Panel>
-      <PanelHead
-        icon="speed"
-        title={t("Node latency")}
-        subtitle={group?.selectable ? t("Fastest first · click a stem to switch") : t("Fastest first · latest URL test")}
-        actions={
-          <>
-            <div className={cx("legend", styles.latencyLegend)}>
-              <span className="legend-item">
-                <span className={cx(styles.legendDot, styles.legendGood)} />
-                {`< ${LATENCY_GOOD_MS} ms`}
-              </span>
-              <span className="legend-item">
-                <span className={cx(styles.legendDot, styles.legendMedium)} />
-                {`${LATENCY_GOOD_MS}–${LATENCY_MEDIUM_MS}`}
-              </span>
-              <span className="legend-item">
-                <span className={cx(styles.legendDot, styles.legendBad)} />
-                {`> ${LATENCY_MEDIUM_MS}`}
-              </span>
-              <span className="legend-item">
-                <span className={cx(styles.legendDot, styles.legendNone)} />
-                {t("No result")}
-              </span>
-            </div>
-            <Button className="accent" disabled={!group || testing === group.tag} onClick={runTest}>
-              {testing !== null && testing === group?.tag ? <Spinner /> : <Icon name="bolt" />}
-              {t("Test latency")}
-            </Button>
-          </>
-        }
-      />
-      {list.length === 0 ? (
-        <EmptyState icon="speed">{t("Empty groups")}</EmptyState>
-      ) : (
-        <>
-          <Tabs
-            options={list.map((entry) => ({ value: entry.tag, label: entry.tag, count: entry.items.length }))}
-            value={group?.tag ?? ""}
-            onChange={(value) => {
-              saveStoredString(LATENCY_TAB_KEY, value);
-              setStored(value);
-            }}
-          />
-          <div className={styles.stemsWrap}>
-            <NodeStems
-              key={group?.tag}
-              nodes={nodes}
-              selected={selected}
-              switching={switching}
-              selectable={group?.selectable ?? false}
-              more={{ count: ranked.length - nodes.length, label: t("On the groups page"), onOpen: () => navigate("groups") }}
-              onSelect={(tag) => {
-                if (!group?.selectable || tag === selected) {
-                  return;
-                }
-                setPendingSelection(tag);
-                api.selectOutbound(group.tag, tag).catch((error: unknown) => {
-                  setPendingSelection(null);
-                  showError(error);
-                });
-              }}
-            />
-          </div>
-        </>
       )}
     </Panel>
   );
@@ -626,7 +510,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function DnsSummaryPanel() {
   const api = useApi();
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const cache = useExtension("dns_cache");
   const [stats, setStats] = useState<DNSQueryLogStats | null>(null);
   const [flushing, setFlushing] = useState(false);
@@ -652,13 +536,16 @@ function DnsSummaryPanel() {
   const buckets = stats?.buckets ?? [];
   const bucketMax = Math.max(...buckets.map((bucket) => Number(bucket.total)), 1);
   const average = Number(stats?.upstreamDuration?.average ?? 0n) / 1000;
+  const [chartRef, chartWidth] = useElementWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const hovered = hover !== null ? buckets[hover] : undefined;
 
   return (
     <Panel>
       <PanelHead
         icon="dns"
         title="DNS"
-        subtitle={t("Queries in the last 24 hours")}
+        subtitle={t("24 hours")}
         actions={
           <>
             {cache && (
@@ -711,18 +598,42 @@ function DnsSummaryPanel() {
         </div>
       </div>
       <div className={styles.flexFill} />
-      <div className={styles.dnsBars} aria-hidden="true">
-        {buckets.map((bucket) => {
+      <div
+        ref={chartRef}
+        className={styles.dnsBars}
+        role="img"
+        aria-label={`${t("Queries")}: ${total.toLocaleString()}`}
+        onPointerLeave={() => setHover(null)}
+      >
+        {buckets.map((bucket, index) => {
           const value = Number(bucket.total);
           const bucketBlocked = Number(bucket.statuses.rejected ?? 0n) + Number(bucket.statuses.predefined ?? 0n);
           return (
-            <span key={String(bucket.time)} className={styles.dnsBar} title={`${new Date(Number(bucket.time)).toLocaleTimeString()} · ${value}`}>
+            <span
+              key={String(bucket.time)}
+              className={cx(styles.dnsBar, hover !== null && hover !== index && styles.dnsBarDimmed)}
+              onPointerEnter={() => setHover(index)}
+            >
               <span style={{ height: `${(value / bucketMax) * 100}%` }}>
                 <span style={{ height: value > 0 ? `${(bucketBlocked / value) * 100}%` : 0 }} />
               </span>
             </span>
           );
         })}
+        {hovered && hover !== null && chartWidth > 0 && (
+          <BarTooltip index={hover} count={buckets.length} width={chartWidth}>
+            <div className="tooltip-value">{Number(hovered.total).toLocaleString()}</div>
+            <div className="tooltip-rows">
+              <span>{t("Blocked")}</span>
+              <span>
+                {(Number(hovered.statuses.rejected ?? 0n) + Number(hovered.statuses.predefined ?? 0n)).toLocaleString()}
+              </span>
+            </div>
+            <div className="tooltip-meta">
+              {new Date(Number(hovered.time)).toLocaleTimeString(language, { hour: "2-digit", minute: "2-digit" })}
+            </div>
+          </BarTooltip>
+        )}
       </div>
       <div className={cx("metric-foot", styles.rangeFoot)}>
         <span>-24h</span>

@@ -13,8 +13,27 @@
   color: var(--text-secondary);
 }
 
-.extension-name {
-  color: var(--text-secondary);
+.extensions-dialog {
+  width: 520px;
+}
+
+.extension-list {
+  padding: 0;
+  margin: var(--space-16) 0 0;
+  list-style: none;
+  border-top: 1px solid var(--rule);
+}
+
+.extension-item {
+  display: flex;
+  gap: var(--space-16);
+  align-items: center;
+  padding: var(--space-12) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.extension-label {
+  font-weight: var(--weight-medium);
 }
 
 @media (max-width: 960px) {

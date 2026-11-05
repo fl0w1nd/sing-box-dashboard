@@ -11,7 +11,7 @@
 
 .summary {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: var(--space-24);
   padding-bottom: var(--space-20);
   border-bottom: 1px solid var(--rule);
@@ -57,9 +57,7 @@
 }
 
 .facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-16);
+  min-width: 0;
 }
 
 .expiring {

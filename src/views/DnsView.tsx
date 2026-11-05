@@ -8,6 +8,7 @@ import { showError } from "../app/errorStore";
 import { useUnaryOnce } from "../app/hooks";
 import { useI18n, type Translate } from "../app/i18n";
 import { Board, Chips, Metric, Panel, PanelHead, SectionHead } from "../components/Board";
+import { BarTooltip, useElementWidth } from "../components/charts";
 import { Icon } from "../components/Icon";
 import { PageHeader } from "../components/PageHeader";
 import {
@@ -95,7 +96,7 @@ function statusLabel(status: string, t: Translate): string {
     case "local":
       return t("Local");
     case "error":
-      return t("Error");
+      return t("Failed");
     default:
       return status;
   }
@@ -374,6 +375,9 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
   const buckets = stats?.buckets ?? [];
   const max = Math.max(...buckets.map((bucket) => Number(bucket.total)), 1);
   const percent = (value: number) => (total > 0 ? `${((value / total) * 100).toFixed(1)}%` : "—");
+  const [chartRef, chartWidth] = useElementWidth<HTMLDivElement>();
+  const [hover, setHover] = useState<number | null>(null);
+  const hovered = hover !== null ? buckets[hover] : undefined;
 
   return (
     <Panel>
@@ -415,8 +419,14 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
           </div>
         </div>
       </div>
-      <div className={styles.histogram}>
-        {buckets.map((bucket) => {
+      <div
+        ref={chartRef}
+        className={styles.histogram}
+        role="img"
+        aria-label={`${t("Queries")}: ${total.toLocaleString()}`}
+        onPointerLeave={() => setHover(null)}
+      >
+        {buckets.map((bucket, index) => {
           const value = Number(bucket.total);
           const parts = [
             { className: styles.barBlocked, value: sumStatuses(bucket.statuses, BLOCKED) },
@@ -427,8 +437,8 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
           return (
             <div
               key={String(bucket.time)}
-              className={styles.bar}
-              title={`${formatDateTime(Number(bucket.time))}\n${t("Queries")}: ${value}`}
+              className={cx(styles.bar, hover !== null && hover !== index && styles.barDimmed)}
+              onPointerEnter={() => setHover(index)}
             >
               <div className={styles.barStack} style={{ height: `${(value / max) * 100}%` }}>
                 {parts.map(
@@ -442,6 +452,20 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
             </div>
           );
         })}
+        {hovered && hover !== null && chartWidth > 0 && (
+          <BarTooltip index={hover} count={buckets.length} width={chartWidth}>
+            <div className="tooltip-value">{Number(hovered.total).toLocaleString()}</div>
+            <div className="tooltip-rows">
+              <span>{t("From cache")}</span>
+              <span>{sumStatuses(hovered.statuses, CACHED).toLocaleString()}</span>
+              <span>{t("Blocked")}</span>
+              <span>{sumStatuses(hovered.statuses, BLOCKED).toLocaleString()}</span>
+              <span>{t("Failed")}</span>
+              <span>{sumStatuses(hovered.statuses, ["error"]).toLocaleString()}</span>
+            </div>
+            <div className="tooltip-meta">{formatDateTime(Number(hovered.time))}</div>
+          </BarTooltip>
+        )}
       </div>
       <div className={cx("metric-foot", styles.histogramFoot)}>
         <span>{buckets.length > 0 ? formatDateTime(Number(buckets[0].time)) : ""}</span>
@@ -452,7 +476,7 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
           </span>
           <span className="legend-item">
             <span className={cx(styles.key, styles.keyCached)} />
-            {t("Cached")}
+            {t("From cache")}
           </span>
           <span className="legend-item">
             <span className={cx(styles.key, styles.keyBlocked)} />
@@ -460,7 +484,7 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
           </span>
           <span className="legend-item">
             <span className={cx(styles.key, styles.keyError)} />
-            {t("Error")}
+            {t("Failed")}
           </span>
         </span>
         <span>{t("now")}</span>
@@ -515,7 +539,7 @@ function UpstreamsPanel(props: { stats: DNSQueryLogStats | null; onPick: (server
   const upstreams = props.stats?.upstreams ?? [];
   return (
     <Panel>
-      <PanelHead icon="waypoints" title={t("Upstream servers")} subtitle={t("Exchanges with each DNS server")} />
+      <PanelHead icon="waypoints" title={t("Upstream servers")} />
       {upstreams.length === 0 ? (
         <div className={styles.topEmpty}>{t("No data yet")}</div>
       ) : (
