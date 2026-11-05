@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import type { DNSQueryFilter } from "../api/extended";
 import { formatBytes, formatClockTime, formatDateTime } from "../api/format";
@@ -31,6 +31,7 @@ import type {
   DNSQueryLogEntry,
   DNSQueryLogStats,
   DNSQueryLogStatsCount,
+  DNSQueryLogStatsRule,
 } from "../gen/daemon/extended_service_pb";
 import { cx } from "../lib/cx";
 import styles from "./DnsView.module.css";
@@ -57,6 +58,8 @@ const STATUSES = [
   "local",
   "error",
 ] as const;
+
+const METHODS = ["exchange", "lookup", "background"] as const;
 
 const QUERY_TYPES = ["A", "AAAA", "HTTPS", "CNAME", "MX", "TXT", "SRV", "PTR", "NS", "SOA"];
 
@@ -247,12 +250,17 @@ function DnsContent(props: { storage: string }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [serverFilter, setServerFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
   const { stats, loading: statsLoading } = useStats(range);
+  // Cores that count entries by method also rank the domains of clients and
+  // of the core apart, rank block rules and filter by method.
+  const split = stats !== null && Object.keys(stats.methods).length > 0;
 
   const focusSearch = (value: string, status = "") => {
     setSearch(value);
     setStatusFilter(status);
+    setMethodFilter("");
     logRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -279,29 +287,18 @@ function DnsContent(props: { storage: string }) {
         </span>
       </div>
       <Board className={cx(statsLoading && stats !== null && "busy-dim")}>
-        <SummaryPanel stats={stats} />
-        <TopPanel
-          icon="dns"
-          title={t("Top domains")}
-          items={stats?.topDomains ?? []}
-          total={Number(stats?.total ?? 0)}
-          onPick={(key) => focusSearch(key)}
-        />
-        <TopPanel
-          icon="direct_off"
-          title={t("Top blocked")}
-          items={stats?.topBlockedDomains ?? []}
-          total={Number(stats?.total ?? 0)}
-          tone="accent"
-          empty={t("Nothing blocked")}
-          onPick={(key) => focusSearch(key)}
+        <SummaryPanel stats={stats} split={split} />
+        <DomainsPanel stats={stats} split={split} onPick={(key) => focusSearch(key)} />
+        <BlockedPanel
+          stats={stats}
+          split={split}
+          onPickDomain={(key) => focusSearch(key)}
+          onPickRule={(status) => focusSearch("", status)}
         />
         <TopPanel
           icon="computer"
           title={t("Top clients")}
-          items={stats?.topClients ?? []}
-          total={Number(stats?.total ?? 0)}
-          onPick={(key) => focusSearch(key)}
+          items={countItems(stats?.topClients ?? [], (key) => focusSearch(key))}
         />
         <UpstreamsPanel stats={stats} onPick={(server) => setServerFilter(server)} />
       </Board>
@@ -309,10 +306,12 @@ function DnsContent(props: { storage: string }) {
         <SectionHead title={t("Query log")} />
       </div>
       <QueryLog
-        filter={{ search, status: statusFilter, queryType: typeFilter, server: serverFilter }}
+        filter={{ search, status: statusFilter, method: methodFilter, queryType: typeFilter, server: serverFilter }}
         servers={servers}
+        methods={split}
         onSearch={setSearch}
         onStatus={setStatusFilter}
+        onMethod={setMethodFilter}
         onType={setTypeFilter}
         onServer={setServerFilter}
       />
@@ -365,7 +364,7 @@ function sumStatuses(statuses: Record<string, bigint> | undefined, keys: string[
 const BLOCKED = ["rejected", "predefined"];
 const CACHED = ["cached", "optimistic"];
 
-function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
+function SummaryPanel(props: { stats: DNSQueryLogStats | null; split: boolean }) {
   const { t } = useI18n();
   const stats = props.stats;
   const total = Number(stats?.total ?? 0);
@@ -385,6 +384,14 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
         <div className={styles.summaryMetric}>
           <div className="metric-label">{t("Queries")}</div>
           <Metric value={stats ? total.toLocaleString() : "—"} size="large" />
+          {props.split && stats && (
+            <div className="metric-foot">
+              {t("Clients {client} · internal {internal}", {
+                client: Number(stats.methods.exchange ?? 0n).toLocaleString(),
+                internal: (total - Number(stats.methods.exchange ?? 0n)).toLocaleString(),
+              })}
+            </div>
+          )}
         </div>
         <div className={styles.summaryMetric}>
           <div className="metric-label">
@@ -493,44 +500,178 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
   );
 }
 
+interface TopItem {
+  key: string;
+  // Replaces the position in the ranking, such as with the index of a rule.
+  rank?: string;
+  label: ReactNode;
+  title: string;
+  count: number;
+  tag?: ReactNode;
+  onPick: () => void;
+}
+
+function countItems(counts: DNSQueryLogStatsCount[], onPick: (key: string) => void): TopItem[] {
+  return counts.map((item) => ({
+    key: item.key,
+    label: item.key,
+    title: item.key,
+    count: Number(item.count),
+    onPick: () => onPick(item.key),
+  }));
+}
+
+function TopList(props: { items: TopItem[]; tone?: "accent"; empty?: string }) {
+  const { t } = useI18n();
+  const max = Math.max(...props.items.map((item) => item.count), 1);
+  if (props.items.length === 0) {
+    return <div className={styles.topEmpty}>{props.empty ?? t("No data yet")}</div>;
+  }
+  return (
+    <ol className={styles.top}>
+      {props.items.map((item, index) => (
+        <li key={item.key}>
+          <button type="button" className={styles.topRow} onClick={item.onPick} title={item.title}>
+            <span className={styles.topRank}>{item.rank ?? String(index + 1).padStart(2, "0")}</span>
+            <span className={styles.topBody}>
+              <span className={styles.topKey}>
+                {item.tag}
+                {item.label}
+              </span>
+              <span className={styles.topTrack}>
+                <span
+                  className={cx(styles.topFill, props.tone === "accent" && styles.topFillAccent)}
+                  style={{ width: `${(item.count / max) * 100}%` }}
+                />
+              </span>
+            </span>
+            <span className={styles.topCount}>{item.count.toLocaleString()}</span>
+          </button>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function TopPanel(props: {
   icon: "dns" | "direct_off" | "computer";
   title: string;
-  items: DNSQueryLogStatsCount[];
-  total: number;
+  items: TopItem[];
   tone?: "accent";
   empty?: string;
+  actions?: ReactNode;
+  footer?: ReactNode;
+}) {
+  return (
+    <Panel span={4}>
+      <PanelHead icon={props.icon} title={props.title} actions={props.actions} />
+      <TopList items={props.items} tone={props.tone} empty={props.empty} />
+      {props.footer}
+    </Panel>
+  );
+}
+
+type DomainSource = "client" | "internal";
+
+// Clients' queries rank apart from the lookups and refreshes the core makes
+// itself, which would otherwise crowd them out.
+function DomainsPanel(props: {
+  stats: DNSQueryLogStats | null;
+  split: boolean;
   onPick: (key: string) => void;
 }) {
   const { t } = useI18n();
-  const max = Math.max(...props.items.map((item) => Number(item.count)), 1);
+  const [source, setSource] = useState<DomainSource>("client");
+  const internal = props.split && source === "internal";
+  const counts = (internal ? props.stats?.topInternalDomains : props.stats?.topDomains) ?? [];
   return (
-    <Panel span={4}>
-      <PanelHead icon={props.icon} title={props.title} />
-      {props.items.length === 0 ? (
-        <div className={styles.topEmpty}>{props.empty ?? t("No data yet")}</div>
-      ) : (
-        <ol className={styles.top}>
-          {props.items.map((item, index) => (
-            <li key={item.key}>
-              <button type="button" className={styles.topRow} onClick={() => props.onPick(item.key)} title={item.key}>
-                <span className={styles.topRank}>{String(index + 1).padStart(2, "0")}</span>
-                <span className={styles.topBody}>
-                  <span className={styles.topKey}>{item.key}</span>
-                  <span className={styles.topTrack}>
-                    <span
-                      className={cx(styles.topFill, props.tone === "accent" && styles.topFillAccent)}
-                      style={{ width: `${(Number(item.count) / max) * 100}%` }}
-                    />
-                  </span>
-                </span>
-                <span className={styles.topCount}>{Number(item.count).toLocaleString()}</span>
-              </button>
-            </li>
-          ))}
-        </ol>
-      )}
-    </Panel>
+    <TopPanel
+      icon="dns"
+      title={t("Top domains")}
+      items={countItems(counts, props.onPick)}
+      actions={
+        props.split && (
+          <Chips
+            className={styles.panelSwitch}
+            options={[
+              { value: "client", label: t("Client") },
+              { value: "internal", label: t("Internal") },
+            ]}
+            value={source}
+            onChange={setSource}
+          />
+        )
+      }
+    />
+  );
+}
+
+type BlockedView = "domains" | "rules";
+
+function ruleStatus(rule: DNSQueryLogStatsRule): string {
+  return rule.actionType === "reject" ? "rejected" : "predefined";
+}
+
+// Domains blocked by rules that name them, and the block rules themselves:
+// a policy rule, such as one answering every AAAA query, is one row there
+// rather than every domain in the domain ranking.
+function BlockedPanel(props: {
+  stats: DNSQueryLogStats | null;
+  split: boolean;
+  onPickDomain: (key: string) => void;
+  onPickRule: (status: string) => void;
+}) {
+  const { t } = useI18n();
+  const [view, setView] = useState<BlockedView>("domains");
+  const rules = props.stats?.topBlockRules ?? [];
+  const policyCount = rules.reduce((sum, rule) => sum + (rule.policy ? Number(rule.count) : 0), 0);
+  const byRule = props.split && view === "rules";
+  const items: TopItem[] = byRule
+    ? rules.map((rule) => ({
+        key: `${rule.rule}\u0000${rule.action}`,
+        rank: `#${rule.index}`,
+        label: (
+          <>
+            {rule.rule}
+            <span className="faint"> → {rule.action}</span>
+          </>
+        ),
+        title: `#${rule.index} ${rule.rule} → ${rule.action}`,
+        count: Number(rule.count),
+        tag: rule.policy ? <span className={styles.ruleTag}>{t("policy")}</span> : undefined,
+        onPick: () => props.onPickRule(ruleStatus(rule)),
+      }))
+    : countItems(props.stats?.topBlockedDomains ?? [], props.onPickDomain);
+  return (
+    <TopPanel
+      icon="direct_off"
+      title={t("Top blocked")}
+      items={items}
+      tone="accent"
+      empty={t("Nothing blocked")}
+      actions={
+        props.split && (
+          <Chips
+            className={styles.panelSwitch}
+            options={[
+              { value: "domains", label: t("Domain") },
+              { value: "rules", label: t("Rule") },
+            ]}
+            value={view}
+            onChange={setView}
+          />
+        )
+      }
+      footer={
+        props.split &&
+        !byRule &&
+        policyCount > 0 && (
+          <button type="button" className={styles.topFoot} onClick={() => setView("rules")}>
+            {t("{count} more answered by policy rules", { count: policyCount.toLocaleString() })}
+          </button>
+        )
+      }
+    />
   );
 }
 
@@ -683,8 +824,10 @@ function useQueryLog(filter: DNSQueryFilter, live: boolean) {
 function QueryLog(props: {
   filter: DNSQueryFilter;
   servers: string[];
+  methods: boolean;
   onSearch: (value: string) => void;
   onStatus: (value: string) => void;
+  onMethod: (value: string) => void;
   onType: (value: string) => void;
   onServer: (value: string) => void;
 }) {
@@ -723,6 +866,20 @@ function QueryLog(props: {
             ...STATUSES.map((status) => ({ value: status, label: statusLabel(status, t) })),
           ]}
         />
+        {props.methods && (
+          <Select
+            inline
+            value={props.filter.method ?? ""}
+            onChange={props.onMethod}
+            options={[
+              { value: "", label: t("All sources") },
+              ...METHODS.map((method) => ({
+                value: method,
+                label: method === "exchange" ? t("Client queries") : methodLabel(method, t),
+              })),
+            ]}
+          />
+        )}
         <Select
           inline
           value={props.filter.queryType ?? ""}
@@ -873,6 +1030,7 @@ function EntryDetail(props: { entry: DNSQueryLogEntry; onClose: () => void }) {
               <span className={styles.ruleText}>
                 <span className="mono">{rule.rule}</span>
                 <span className="faint"> → {rule.action}</span>
+                {rule.policy && <span className={styles.method}>{t("policy")}</span>}
               </span>
             </div>
           ))}

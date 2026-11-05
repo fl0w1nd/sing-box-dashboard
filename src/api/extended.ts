@@ -40,6 +40,8 @@ export interface DNSQueryFilter {
   search?: string;
   queryType?: string;
   status?: string;
+  // exchange, lookup or background; cores before the method filter ignore it.
+  method?: string;
   server?: string;
   inbound?: string;
   since?: number;
@@ -169,6 +171,7 @@ function toRequest(filter: DNSQueryFilter) {
     search: filter.search ?? "",
     queryType: filter.queryType ?? "",
     status: filter.status ?? "",
+    method: filter.method ?? "",
     server: filter.server ?? "",
     inbound: filter.inbound ?? "",
     since: BigInt(filter.since ?? 0),

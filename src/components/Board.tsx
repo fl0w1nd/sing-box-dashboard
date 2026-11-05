@@ -70,9 +70,10 @@ export function Chips<T extends string>(props: {
   options: { value: T; label: ReactNode; count?: number }[];
   value: T;
   onChange: (value: T) => void;
+  className?: string;
 }) {
   return (
-    <div className="legend" role="radiogroup">
+    <div className={cx("legend", props.className)} role="radiogroup">
       {props.options.map((option) => (
         <button
           key={option.value}

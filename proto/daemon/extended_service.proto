@@ -97,6 +97,9 @@ message DNSQueryLogRequest {
   // Returns entries with an ID below this cursor when not zero.
   uint64 before = 8;
   int32 limit = 9;
+  // exchange for the queries of clients, lookup for the lookups of the core,
+  // or background.
+  string method = 10;
 }
 
 message DNSQueryLogPage {
@@ -138,6 +141,9 @@ message DNSQueryLogRule {
   string rule = 2;
   string action = 3;
   string actionType = 4;
+  // The rule matches without a domain, IP CIDR or rule-set condition, such
+  // as by query type alone, so it applies to every domain.
+  bool policy = 5;
 }
 
 message DNSQueryLogUpstream {
@@ -175,8 +181,10 @@ message DNSQueryLogStats {
   // From since, or the oldest entry, to until, or now, empty buckets
   // included. Buckets start at a multiple of the bucket length in Unix time.
   repeated DNSQueryLogStatsBucket buckets = 4;
+  // Domains of exchanges: the queries the core received from clients.
   repeated DNSQueryLogStatsCount topDomains = 5;
-  // Domains answered by a reject or predefined rule.
+  // Domains answered by a reject or predefined rule that is not a policy
+  // rule.
   repeated DNSQueryLogStatsCount topBlockedDomains = 6;
   // Source addresses without the port; entries without a source, such as
   // background refreshes, are left out.
@@ -189,6 +197,25 @@ message DNSQueryLogStats {
   DNSQueryLogDuration duration = 10;
   // Of entries with the upstream status.
   DNSQueryLogDuration upstreamDuration = 11;
+  // Entries by method.
+  map<string, int64> methods = 12;
+  // Domains of lookups and background queries: the ones the core made
+  // itself.
+  repeated DNSQueryLogStatsCount topInternalDomains = 13;
+  // Reject and predefined rules by the queries they answered, policy rules
+  // included.
+  repeated DNSQueryLogStatsRule topBlockRules = 14;
+}
+
+// Rules are told apart by their conditions and action; index is of the
+// newest entry.
+message DNSQueryLogStatsRule {
+  int32 index = 1;
+  string rule = 2;
+  string action = 3;
+  string actionType = 4;
+  bool policy = 5;
+  int64 count = 6;
 }
 
 message DNSQueryLogStatsBucket {
