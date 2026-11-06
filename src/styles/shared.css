@@ -915,7 +915,7 @@ button.select:disabled {
   align-items: center;
 }
 
-.search-input .icon {
+.search-input > .icon {
   position: absolute;
   inset-inline-start: 9px;
   color: var(--text-faint);

@@ -596,6 +596,8 @@ export const TRANSLATIONS = {
   "Members": { "zh-Hans": "成员" },
   "Active connections": { "zh-Hans": "活动连接" },
   "Show in Connections": { "zh-Hans": "在连接页查看" },
+  "Query trend": { "zh-Hans": "查询趋势" },
+  "Query types": { "zh-Hans": "查询类型" },
 } as const satisfies Record<string, Record<TranslatedLanguage, string | PluralForms>>;
 
 export type MessageKey = keyof typeof TRANSLATIONS;
