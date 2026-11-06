@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no" />
+    <meta name="color-scheme" content="light" />
+    <!-- iOS 26 Safari ignores theme-color and samples #statusbar-tint instead. -->
+    <meta name="theme-color" content="#f4f3ef" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="sing-box" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script>
+      // Light only for now; the language is resolved before first paint so
+      // that CJK text gets the right lang-dependent font fallback.
+      document.documentElement.dataset.theme = "light";
+      (function () {
+        var lang = "en";
+        try {
+          var stored = localStorage.getItem("sing-box-dashboard.language");
+          if (stored === "en" || stored === "zh-Hans") {
+            lang = stored;
+          } else {
+            var tags = navigator.languages || [navigator.language];
+            for (var i = 0; i < tags.length; i++) {
+              var tag = String(tags[i]).toLowerCase();
+              if (tag.indexOf("zh") === 0) {
+                lang = "zh-Hans";
+                break;
+              }
+              if (tag.indexOf("en") === 0) {
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+        document.documentElement.lang = lang;
+      })();
+    </script>
+    <title>sing-box dashboard</title>
+    <meta name="description" content="Web dashboard for sing-box Extended." />
+    <script type="module" crossorigin src="./assets/index-C6_6ZkL6.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BTyiz3Jb.css">
+  <link rel="manifest" href="./manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="./registerSW.js" defer></script>
+<link rel="icon" href="./favicon.ico" sizes="48x48">
+<link rel="icon" href="./favicon.svg" sizes="any" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./apple-touch-icon-180x180.png"></head>
+  <body>
+    <!-- iOS 26 Safari samples this fixed element for the status bar tint. -->
+    <div id="statusbar-tint" class="statusbar-tint" aria-hidden="true"></div>
+    <div id="root"></div>
+  </body>
+</html>
