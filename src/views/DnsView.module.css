@@ -298,15 +298,19 @@
 .y-label-top,
 .y-label-mid {
   position: absolute;
-  inset-inline-start: 8px;
+  inset-inline-start: 4px;
+  padding: 0 var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
+  line-height: 1.4;
   color: var(--text-faint);
   pointer-events: none;
+  background: rgb(255 255 255 / 84%);
+  border-radius: var(--radius-xs);
 }
 
-.y-label-top { top: 0; }
-.y-label-mid { top: 44%; }
+.y-label-top { top: -2px; }
+.y-label-mid { top: 42%; }
 
 .trend-tooltip {
   min-width: 156px;
