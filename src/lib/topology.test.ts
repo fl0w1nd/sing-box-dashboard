@@ -106,7 +106,13 @@ describe("topology destinations", () => {
     ["1.1.1.1:443", "internet"],
     ["[2606:4700:4700::1111]:443", "internet"],
     ["100.64.0.1:80", "unknown"],
-    ["example.com:443", "unknown"],
+    ["example.com:443", "internet"],
+    ["chatgpt.com:443", "internet"],
+    ["steamcommunity.com:443", "internet"],
+    ["WWW.Google.COM.:443", "internet"],
+    ["localhost:80", "local"],
+    ["router.lan:80", "lan"],
+    ["printer.local:80", "lan"],
     ["", "unknown"],
     ["999.1.1.1:80", "unknown"],
     ["[::]:80", "unknown"],
@@ -150,4 +156,12 @@ describe("topology destinations", () => {
     expect(model.columns.destination).toEqual([]);
     expect(model.paths.every((path) => path.nodes.at(-1)?.startsWith("x:"))).toBe(true);
   });
+});
+
+it("groups domain-only proxy connections with public IP destinations", () => {
+  const inputs = ["chatgpt.com:443", "steamcommunity.com:443", "1.1.1.1:443"].map(destination => row({ destination, outboundType: "vless", down: 10 }));
+  const model = buildTopology(inputs);
+  expect(model.columns.destination).toHaveLength(1);
+  expect(model.columns.destination[0]).toMatchObject({ destinationKind: "internet", conns: 3, down: 30 });
+  expect(connectionsThrough(model, "destination:internet").map(entry => entry.row)).toEqual(inputs);
 });

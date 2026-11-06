@@ -99,6 +99,13 @@ function destinationKind(connection: Connection, local: Set<string>, peers: Set<
     }
     if ((first & 0xe000) === 0x2000 && !host.startsWith("2001:db8:")) return "internet";
   }
+  // Domain destinations are common with sniffing and remote DNS resolution.
+  const domain = host.replace(/\.$/, "");
+  if (domain === "localhost" || domain.endsWith(".localhost")) return direct ? "local" : "unknown";
+  if (domain.endsWith(".local") || domain.endsWith(".lan")) return "lan";
+  if (domain.includes(".") && /[a-z]/i.test(domain) && domain.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label))) {
+    return connection.outboundType === "tailscale" && domain.endsWith(".ts.net") ? "tailscale" : "internet";
+  }
   return "unknown";
 }
 
