@@ -28,13 +28,23 @@ export function GroupsView() {
     saveStoredString(SORT_KEY, value);
     setSortState(value);
   };
-  const allExpanded = groups.data.groups.length > 0 && groups.data.groups.every((group) => group.isExpand);
+  const [expandOverrides, setExpandOverrides] = useState<Record<string, boolean>>({});
+  const isExpanded = (group: Group) => expandOverrides[group.tag] ?? group.isExpand;
+  const setExpanded = (group: Group, expand: boolean) => {
+    const previous = isExpanded(group);
+    setExpandOverrides((current) => ({ ...current, [group.tag]: expand }));
+    return api.setGroupExpand(group.tag, expand).catch((error: unknown) => {
+      setExpandOverrides((current) => ({ ...current, [group.tag]: previous }));
+      showError(error);
+    });
+  };
+  const allExpanded = groups.data.groups.length > 0 && groups.data.groups.every(isExpanded);
   const setAllExpanded = (expand: boolean) => {
-    Promise.all(
-      groups.data.groups
-        .filter((group) => group.isExpand !== expand)
-        .map((group) => api.setGroupExpand(group.tag, expand)),
-    ).catch(showError);
+    for (const group of groups.data.groups) {
+      if (isExpanded(group) !== expand) {
+        void setExpanded(group, expand);
+      }
+    }
   };
 
   return (
@@ -93,7 +103,14 @@ export function GroupsView() {
       {groups.data.groups.length > 0 && (
         <Board>
           {groups.data.groups.map((group) => (
-            <GroupPanel key={group.tag} group={group} query={query} sort={sort} />
+            <GroupPanel
+              key={group.tag}
+              group={group}
+              query={query}
+              sort={sort}
+              expanded={isExpanded(group)}
+              onExpand={(expand) => void setExpanded(group, expand)}
+            />
           ))}
         </Board>
       )}
@@ -133,12 +150,18 @@ function matches(item: GroupItem, query: string) {
   return query === "" || item.tag.toLowerCase().includes(query) || item.type.toLowerCase().includes(query);
 }
 
-function GroupPanel(props: { group: Group; query: string; sort: NodeSort }) {
+function GroupPanel(props: {
+  group: Group;
+  query: string;
+  sort: NodeSort;
+  expanded: boolean;
+  onExpand: (expand: boolean) => void;
+}) {
   const api = useApi();
   const { t } = useI18n();
   const group = props.group;
   const [testing, setTesting] = useState(false);
-  const [expanded, setExpandOverride] = usePendingValue(group.isExpand);
+  const expanded = props.expanded;
   const [selected, setPendingSelection, switching] = usePendingValue(group.selected);
   const items = group.items.filter((item) => matches(item, props.query));
   const groupMatches = props.query !== "" && group.tag.toLowerCase().includes(props.query);
@@ -152,9 +175,7 @@ function GroupPanel(props: { group: Group; query: string; sort: NodeSort }) {
   }
 
   const toggleExpand = () => {
-    const next = !expanded;
-    setExpandOverride(next);
-    api.setGroupExpand(group.tag, next).catch(() => setExpandOverride(null));
+    props.onExpand(!expanded);
   };
 
   const runURLTest = () => {

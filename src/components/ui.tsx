@@ -10,6 +10,7 @@ import { useDismiss } from "../app/hooks";
 import { useI18n } from "../app/i18n";
 import { useLatestRef } from "../app/useLatest";
 import { cx } from "../lib/cx";
+import { copyText } from "../lib/clipboard";
 import { BrandMark } from "./Board";
 import { Icon, type IconName } from "./Icon";
 
@@ -841,7 +842,7 @@ export function useCopy(): [boolean, (text: string) => void] {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(timer.current), []);
   const copy = (text: string) => {
-    navigator.clipboard.writeText(text).then(() => {
+    copyText(text).then(() => {
       setCopied(true);
       showToast(t("Copied to clipboard"));
       clearTimeout(timer.current);
