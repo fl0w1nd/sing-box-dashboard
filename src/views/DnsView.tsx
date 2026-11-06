@@ -22,6 +22,7 @@ import {
   Dialog,
   EmptyState,
   LoadingBar,
+  LoadingDots,
   MenuItem,
   OthersMenu,
   SearchInput,
@@ -285,7 +286,7 @@ export function DnsView() {
         <EmptyState icon="dns">{t("This core does not record DNS queries.")}</EmptyState>
       ) : status === null ? (
         <EmptyState>
-          <Spinner />
+          <LoadingDots />
         </EmptyState>
       ) : !status.enabled ? (
         <div className={styles.disabled}>
@@ -442,7 +443,14 @@ function OverviewTab(props: {
     [buckets],
   );
 
-  const avgDuration = stats?.upstreamDuration ? formatMicros(stats.upstreamDuration.average) : "—";
+  const initialLoading = stats === null && props.loading;
+  const avgDuration = stats
+    ? stats.upstreamDuration
+      ? formatMicros(stats.upstreamDuration.average)
+      : "—"
+    : initialLoading
+      ? <LoadingDots />
+      : "—";
   const p95Duration = stats?.upstreamDuration ? formatMicros(stats.upstreamDuration.p95) : "—";
 
   return (
@@ -474,14 +482,16 @@ function OverviewTab(props: {
         <KpiCard
           label={t("Queries")}
           badge={stats ? `${percent(clientCount)} ${t("Client")}` : undefined}
-          value={stats ? total.toLocaleString() : "—"}
+          value={stats ? total.toLocaleString() : initialLoading ? <LoadingDots /> : "—"}
           foot={
             stats
               ? t("Clients {client} · internal {internal}", {
                   client: clientCount.toLocaleString(),
                   internal: internalCount.toLocaleString(),
                 })
-              : "—"
+              : initialLoading
+                ? ""
+                : "—"
           }
           series={totalSeries}
           tone="ink"
@@ -491,11 +501,13 @@ function OverviewTab(props: {
           label={t("From cache")}
           badge={stats ? percent(cached) : undefined}
           badgeTone="info"
-          value={stats ? cached.toLocaleString() : "—"}
+          value={stats ? cached.toLocaleString() : initialLoading ? <LoadingDots /> : "—"}
           foot={
             stats
               ? `${t("Cached")} ${strictCached.toLocaleString()} · ${t("Optimistic")} ${optimistic.toLocaleString()}`
-              : "—"
+              : initialLoading
+                ? ""
+                : "—"
           }
           series={cachedSeries}
           tone="cobalt"
@@ -505,11 +517,13 @@ function OverviewTab(props: {
           label={t("Blocked")}
           badge={stats ? percent(blocked) : undefined}
           badgeTone={blocked > 0 ? "bad" : "neutral"}
-          value={stats ? blocked.toLocaleString() : "—"}
+          value={stats ? blocked.toLocaleString() : initialLoading ? <LoadingDots /> : "—"}
           foot={
             stats
               ? `${t("Rejected")} ${blocked.toLocaleString()} · ${t("Predefined")} ${predefined.toLocaleString()}`
-              : "—"
+              : initialLoading
+                ? ""
+                : "—"
           }
           series={blockedSeries}
           tone="bad"
@@ -523,7 +537,9 @@ function OverviewTab(props: {
           foot={
             stats
               ? `${t("Failed")} ${failed.toLocaleString()} (${percent(failed)})`
-              : "—"
+              : initialLoading
+                ? ""
+                : "—"
           }
           series={upstreamSeries}
           tone="good"
@@ -533,10 +549,11 @@ function OverviewTab(props: {
 
       {/* Row 2: Fixed-height SVG Area Timeline + Query Type / Status Distribution */}
       <div className={styles.analyticsRow}>
-        <TrendCard buckets={buckets} total={total} />
+        <TrendCard buckets={buckets} total={total} loading={initialLoading} />
         <DistributionCard
           stats={stats}
           total={total}
+          loading={initialLoading}
           onPickType={(queryType) => props.onOpenLog({ queryType })}
           onPickStatus={(status) => props.onOpenLog({ status })}
         />
@@ -546,16 +563,19 @@ function OverviewTab(props: {
       <div className={styles.rankGrid}>
         <DomainsCard
           stats={stats}
+          loading={initialLoading}
           onPick={(domain) => props.onOpenLog({ search: domain })}
         />
         <BlockedCard
           stats={stats}
+          loading={initialLoading}
           onPickDomain={(domain) => props.onOpenLog({ search: domain })}
           onPickRule={() => props.onOpenLog({ status: "rejected" })}
         />
         <RankCard
           icon="computer"
           title={t("Top clients")}
+          loading={initialLoading}
           items={countItems(stats?.topClients ?? [], (client) => props.onOpenLog({ search: client }))}
         />
       </div>
@@ -582,8 +602,8 @@ function KpiCard(props: {
   label: string;
   badge?: string;
   badgeTone?: BadgeTone;
-  value: string;
-  foot: string;
+  value: ReactNode;
+  foot: ReactNode;
   series: number[];
   tone: SparkTone;
   onClick: () => void;
@@ -621,7 +641,7 @@ function KpiCard(props: {
   );
 }
 
-function TrendCard(props: { buckets: DNSQueryLogStatsBucket[]; total: number }) {
+function TrendCard(props: { buckets: DNSQueryLogStatsBucket[]; total: number; loading?: boolean }) {
   const { t, language } = useI18n();
   const buckets = props.buckets;
   const [chartRef, width] = useElementWidth<HTMLDivElement>();
@@ -820,7 +840,7 @@ function TrendCard(props: { buckets: DNSQueryLogStatsBucket[]; total: number }) 
             )}
           </>
         ) : (
-          <div className={styles.topEmpty}>{t("No data yet")}</div>
+          <div className={styles.topEmpty}>{props.loading ? <LoadingDots /> : t("No data yet")}</div>
         )}
       </div>
     </section>
@@ -838,6 +858,7 @@ const TYPE_TONES = [
 function DistributionCard(props: {
   stats: DNSQueryLogStats | null;
   total: number;
+  loading?: boolean;
   onPickType: (queryType: string) => void;
   onPickStatus: (status: string) => void;
 }) {
@@ -863,7 +884,7 @@ function DistributionCard(props: {
         <span className={styles.cardTitle}>{t("Query types")}</span>
       </header>
       {queryTypes.length === 0 ? (
-        <div className={styles.topEmpty}>{t("No data yet")}</div>
+        <div className={styles.topEmpty}>{props.loading ? <LoadingDots /> : t("No data yet")}</div>
       ) : (
         <>
           <div className={styles.typeBar} aria-hidden="true">
@@ -949,6 +970,7 @@ function RankCard(props: {
   icon: IconName;
   title: string;
   items: TopItem[];
+  loading?: boolean;
   tone?: "bad";
   empty?: string;
   actions?: ReactNode;
@@ -988,7 +1010,9 @@ function RankCard(props: {
         {props.actions && <div className={styles.cardActions}>{props.actions}</div>}
       </header>
       {props.items.length === 0 ? (
-        <div className={styles.topEmpty}>{props.empty ?? t("No data yet")}</div>
+        <div className={styles.topEmpty}>
+          {props.loading ? <LoadingDots /> : (props.empty ?? t("No data yet"))}
+        </div>
       ) : (
         <ol
           className={cx(styles.rankList, scrolling && styles.scrolling)}
@@ -1028,7 +1052,11 @@ function RankCard(props: {
 
 type DomainSource = "client" | "internal";
 
-function DomainsCard(props: { stats: DNSQueryLogStats | null; onPick: (key: string) => void }) {
+function DomainsCard(props: {
+  stats: DNSQueryLogStats | null;
+  loading?: boolean;
+  onPick: (key: string) => void;
+}) {
   const { t } = useI18n();
   const [source, setSource] = useState<DomainSource>("client");
   const internal = source === "internal";
@@ -1038,6 +1066,7 @@ function DomainsCard(props: { stats: DNSQueryLogStats | null; onPick: (key: stri
     <RankCard
       icon="dns"
       title={t("Top domains")}
+      loading={props.loading}
       items={countItems(counts, props.onPick)}
       footer={
         reverseCount > 0 && (
@@ -1065,6 +1094,7 @@ type BlockedView = "domains" | "rules";
 
 function BlockedCard(props: {
   stats: DNSQueryLogStats | null;
+  loading?: boolean;
   onPickDomain: (key: string) => void;
   onPickRule: () => void;
 }) {
@@ -1091,6 +1121,7 @@ function BlockedCard(props: {
     <RankCard
       icon="direct_off"
       title={t("Top blocked")}
+      loading={props.loading}
       items={items}
       tone="bad"
       empty={t("Nothing blocked")}
@@ -1468,7 +1499,7 @@ function QueryLog(props: {
         <LoadingBar active={busy} />
         {busy && log.entries.length === 0 ? (
           <EmptyState>
-            <Spinner />
+            <LoadingDots />
           </EmptyState>
         ) : log.entries.length === 0 ? (
           <EmptyState icon="search">{t("No queries match the filters")}</EmptyState>

@@ -72,6 +72,20 @@ export function Spinner(props: { className?: string }) {
   return <span className={cx("spinner", props.className)} />;
 }
 
+export function LoadingDots(props: { size?: "sm" | "md"; className?: string }) {
+  return (
+    <span
+      className={cx("loading-dots", props.size === "sm" && "sm", props.className)}
+      role="status"
+      aria-busy="true"
+    >
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
 export function LoadingBar(props: { active: boolean }) {
   return props.active ? <span className="loading-bar" role="progressbar" aria-busy="true" /> : null;
 }

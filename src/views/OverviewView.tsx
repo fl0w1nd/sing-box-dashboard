@@ -32,6 +32,7 @@ import {
   DetailShell,
   Dialog,
   EmptyState,
+  LoadingDots,
   Spinner,
   type BadgeTone,
 } from "../components/ui";
@@ -1133,18 +1134,26 @@ function DnsSummaryCard() {
       <div className={styles.dnsStatsGrid}>
         <button type="button" className={styles.dnsStatBox} onClick={() => navigate("dns")}>
           <span className={styles.dnsStatLabel}>{t("Queries")}</span>
-          <span className={styles.dnsStatValue}>{stats ? total.toLocaleString() : "—"}</span>
+          <span className={styles.dnsStatValue}>
+            {stats ? total.toLocaleString() : loading ? <LoadingDots /> : "—"}
+          </span>
         </button>
         <button type="button" className={styles.dnsStatBox} onClick={() => navigate("dns")}>
           <span className={styles.dnsStatLabel}>{t("From cache")}</span>
           <span className={styles.dnsStatValue}>
-            {stats ? (total > 0 ? `${((cached / total) * 100).toFixed(1)}%` : "0.0%") : "—"}
+            {stats
+              ? total > 0
+                ? `${((cached / total) * 100).toFixed(1)}%`
+                : "0.0%"
+              : loading
+                ? <LoadingDots />
+                : "—"}
           </span>
         </button>
         <button type="button" className={styles.dnsStatBox} onClick={() => navigate("dns")}>
           <span className={styles.dnsStatLabel}>{t("Blocked")}</span>
           <span className={styles.dnsStatValue}>
-            {stats ? blocked.toLocaleString() : "—"}
+            {stats ? blocked.toLocaleString() : loading ? <LoadingDots /> : "—"}
             {stats && total > 0 && (
               <span className={styles.dnsStatSub}>{((blocked / total) * 100).toFixed(1)}%</span>
             )}
@@ -1153,7 +1162,13 @@ function DnsSummaryCard() {
         <button type="button" className={styles.dnsStatBox} onClick={() => navigate("dns")}>
           <span className={styles.dnsStatLabel}>{t("Upstream avg")}</span>
           <span className={styles.dnsStatValue}>
-            {stats && average > 0 ? formatDurationMs(average).replace(/([a-zµ]+)$/i, " $1") : "—"}
+            {stats
+              ? average > 0
+                ? formatDurationMs(average).replace(/([a-zµ]+)$/i, " $1")
+                : "—"
+              : loading
+                ? <LoadingDots />
+                : "—"}
           </span>
         </button>
       </div>
