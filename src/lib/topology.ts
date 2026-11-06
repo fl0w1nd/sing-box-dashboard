@@ -1,7 +1,7 @@
 // Traffic topology: folds the active connections into five columns and the
 // paths between them.
 //
-//   source → inbound → group → exit → internet
+//   source → inbound → group → exit → destination
 //
 // The group is the first outbound the rule picked when it is a group (the
 // start of the chain), the exit is the outbound that dialed (the end of the
@@ -9,11 +9,11 @@
 // column.
 
 import type { ConnectionRow } from "../api/daemon";
-import type { Connection } from "../gen/daemon/started_service_pb";
+import type { Connection, TailscaleEndpointStatus } from "../gen/daemon/started_service_pb";
 
-export type TopologyColumn = "source" | "inbound" | "group" | "exit" | "internet";
+export type TopologyColumn = "source" | "inbound" | "group" | "exit" | "destination";
 
-export const TOPOLOGY_COLUMNS: TopologyColumn[] = ["source", "inbound", "group", "exit", "internet"];
+export const TOPOLOGY_COLUMNS: TopologyColumn[] = ["source", "inbound", "group", "exit", "destination"];
 
 export type SourceKind = "device" | "app" | "local" | "tailscale" | "internal";
 
@@ -25,6 +25,7 @@ export interface TopologyNode {
   // sing-box type.
   kind?: SourceKind;
   type?: string;
+  destinationKind?: DestinationKind;
   // The outbound or inbound tag; empty for sources and folded nodes.
   tag: string;
   // Source nodes: the addresses seen for it.
@@ -58,10 +59,51 @@ export interface TopologyModel {
   totals: { conns: number; up: number; down: number };
 }
 
-export const INTERNET_KEY = "internet";
+export type DestinationKind = "local" | "lan" | "tailscale" | "internet" | "unknown";
+
+function canonicalHost(host: string): string {
+  const normalized = normalizeHost(host);
+  if (!normalized.includes(":")) return normalized;
+  try {
+    const canonical = new URL(`http://[${normalized}]/`).hostname.slice(1, -1);
+    const mapped = /^::ffff:([0-9a-f]+):([0-9a-f]+)$/.exec(canonical);
+    if (mapped) {
+      const high = parseInt(mapped[1], 16);
+      const low = parseInt(mapped[2], 16);
+      return [high >> 8, high & 255, low >> 8, low & 255].join(".");
+    }
+    return canonical;
+  } catch {
+    return normalized;
+  }
+}
+
+function destinationKind(connection: Connection, local: Set<string>, peers: Set<string>): DestinationKind {
+  const host = canonicalHost(hostOf(connection.destination));
+  const direct = connection.outboundType === "direct";
+  if (local.has(host) || isLoopback(host)) return direct ? "local" : "unknown";
+  if (peers.has(host)) return "tailscale";
+  const octets = host.split(".");
+  if (octets.length === 4 && octets.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) {
+    const [a, b, c] = octets.map(Number);
+    if (a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)) return "lan";
+    if (a === 100 && b >= 64 && b <= 127) return connection.outboundType === "tailscale" ? "tailscale" : "unknown";
+    if (a === 0 || a >= 224 || (a === 192 && b === 0 && (c === 0 || c === 2)) || (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) || (a === 203 && b === 0 && c === 113)) return "unknown";
+    return "internet";
+  }
+  if (host.includes(":")) {
+    try { new URL(`http://[${host}]/`); } catch { return "unknown"; }
+    const first = parseInt(host.split(":")[0], 16);
+    if ((first & 0xfe00) === 0xfc00 || (first & 0xffc0) === 0xfe80) {
+      return connection.outboundType === "tailscale" && host.startsWith("fd7a:115c:a1e0:") ? "tailscale" : "lan";
+    }
+    if ((first & 0xe000) === 0x2000 && !host.startsWith("2001:db8:")) return "internet";
+  }
+  return "unknown";
+}
 
 // Columns grow until these many nodes, then the quietest fold into one.
-const LIMITS: Record<Exclude<TopologyColumn, "internet">, number> = {
+const LIMITS: Record<Exclude<TopologyColumn, "destination">, number> = {
   source: 8,
   inbound: 5,
   group: 8,
@@ -99,7 +141,7 @@ export function normalizeHost(host: string): string {
 }
 
 function isLoopback(host: string): boolean {
-  return host === "::1" || host.startsWith("127.");
+  return host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host) && host.split(".").every((part) => Number(part) <= 255);
 }
 
 export function processName(connection: Connection): string {
@@ -171,6 +213,7 @@ function rank(
 export function buildTopology(
   rows: Iterable<ConnectionRow>,
   previousOrder: Partial<Record<TopologyColumn, string[]>> = {},
+  endpoints: TailscaleEndpointStatus[] = [],
 ): TopologyModel {
   const columns = {
     source: new Map<string, TopologyNode>(),
@@ -187,16 +230,9 @@ export function buildTopology(
     return found;
   };
 
-  const internet: TopologyNode = {
-    key: INTERNET_KEY,
-    column: "internet",
-    label: "",
-    tag: "",
-    addresses: [],
-    conns: 0,
-    up: 0,
-    down: 0,
-  };
+  const destinations = new Map<DestinationKind, TopologyNode>();
+  const local = new Set(endpoints.flatMap((endpoint) => endpoint.self?.tailscaleIPs ?? []).map(canonicalHost));
+  const peers = new Set(endpoints.flatMap((endpoint) => endpoint.userGroups.flatMap((group) => group.peers.flatMap((peer) => peer.tailscaleIPs))).map(canonicalHost));
   const connections: TopologyConnection[] = [];
   const totals = { conns: 0, up: 0, down: 0 };
 
@@ -225,7 +261,16 @@ export function buildTopology(
     const exitNode = node("exit", `x:${exitTag}`, { label: exitTag, tag: exitTag, type: connection.outboundType });
     const leaves = !LOCAL_EXIT_TYPES.has(connection.outboundType);
 
-    const passed = [sourceNode, inboundNode, groupNode, exitNode, leaves ? internet : null].filter(
+    let destination: TopologyNode | null = null;
+    if (leaves) {
+      const kind = destinationKind(connection, local, peers);
+      destination = destinations.get(kind) ?? {
+        key: `destination:${kind}`, column: "destination", destinationKind: kind,
+        label: "", tag: "", addresses: [], conns: 0, up: 0, down: 0,
+      };
+      destinations.set(kind, destination);
+    }
+    const passed = [sourceNode, inboundNode, groupNode, exitNode, destination].filter(
       (entry): entry is TopologyNode => entry !== null,
     );
     for (const entry of passed) {
@@ -240,7 +285,7 @@ export function buildTopology(
   }
 
   const result: TopologyModel = {
-    columns: { source: [], inbound: [], group: [], exit: [], internet: internet.conns > 0 ? [internet] : [] },
+    columns: { source: [], inbound: [], group: [], exit: [], destination: (["local", "lan", "tailscale", "internet", "unknown"] as const).flatMap((kind) => destinations.get(kind) ?? []) },
     paths: [],
     connections,
     order: {},

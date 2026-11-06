@@ -2,8 +2,8 @@ import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { describe, expect, it } from "vitest";
 
 import type { ConnectionRow } from "../api/daemon";
-import { ConnectionSchema, ProcessInfoSchema } from "../gen/daemon/started_service_pb";
-import { buildTopology, connectionsThrough, hostOf, INTERNET_KEY, normalizeHost, topologyEdges } from "./topology";
+import { ConnectionSchema, ProcessInfoSchema, TailscaleEndpointStatusSchema } from "../gen/daemon/started_service_pb";
+import { buildTopology, connectionsThrough, hostOf, normalizeHost, topologyEdges } from "./topology";
 
 let sequence = 0;
 
@@ -14,6 +14,7 @@ function row(init: MessageInitShape<typeof ConnectionSchema> & { up?: number; do
     inbound: "tun-in",
     inboundType: "tun",
     source: "192.168.1.10:50000",
+    destination: "1.1.1.1:443",
     outbound: "direct",
     outboundType: "direct",
     ...fields,
@@ -50,10 +51,10 @@ describe("buildTopology", () => {
     expect(model.columns.group.map((node) => node.key)).toEqual(["g:Proxy"]);
     expect(model.columns.exit.map((node) => node.key)).toEqual(["x:JP 01", "x:direct", "x:block"]);
     const proxied = model.paths.find((path) => path.nodes.includes("g:Proxy"));
-    expect(proxied?.nodes).toEqual(["ip:192.168.1.10", "in:tun-in", "g:Proxy", "x:JP 01", INTERNET_KEY]);
+    expect(proxied?.nodes).toEqual(["ip:192.168.1.10", "in:tun-in", "g:Proxy", "x:JP 01", "destination:internet"]);
     // Blocked connections stop at the exit.
     expect(model.paths.find((path) => path.nodes.includes("x:block"))?.nodes.at(-1)).toBe("x:block");
-    expect(model.columns.internet[0].conns).toBe(2);
+    expect(model.columns.destination[0].conns).toBe(2);
     expect(topologyEdges(model.paths).find((edge) => edge.key === "in:tun-in>x:direct")?.conns).toBe(1);
   });
 
@@ -87,5 +88,66 @@ describe("buildTopology", () => {
     const shown = second.columns.source.map((node) => node.key);
     expect(shown.slice(0, 6)).toEqual(first.order.source!.filter((key) => key !== "ip:10.0.0.3"));
     expect(shown[6]).toBe("ip:10.0.0.2");
+  });
+});
+
+
+describe("topology destinations", () => {
+  it.each([
+    ["127.0.0.1:443", "local"],
+    ["[0:0:0:0:0:0:0:1]:443", "local"],
+    ["[::ffff:7f00:1]:443", "local"],
+    ["10.0.0.1:80", "lan"],
+    ["172.16.0.1:80", "lan"],
+    ["192.168.8.1:80", "lan"],
+    ["169.254.1.1:80", "lan"],
+    ["[fe80::1%en0]:80", "lan"],
+    ["[fd00::1]:80", "lan"],
+    ["1.1.1.1:443", "internet"],
+    ["[2606:4700:4700::1111]:443", "internet"],
+    ["100.64.0.1:80", "unknown"],
+    ["example.com:443", "unknown"],
+    ["", "unknown"],
+    ["999.1.1.1:80", "unknown"],
+    ["[::]:80", "unknown"],
+    ["224.0.0.1:80", "unknown"],
+  ])("classifies %s as %s", (destination, kind) => {
+    const model = buildTopology([row({ destination })]);
+    expect(model.columns.destination[0].destinationKind).toBe(kind);
+  });
+
+  it("separates Tailscale local access, peer access and exit-node internet traffic", () => {
+    const endpoints = [create(TailscaleEndpointStatusSchema, {
+      self: { tailscaleIPs: ["100.64.0.1"] },
+      userGroups: [{ peers: [{ tailscaleIPs: ["100.64.0.2", "fd7a:115c:a1e0::2"] }] }],
+    })];
+    const inputs = [
+      row({ inboundType: "tailscale", destination: "127.0.0.1:22", up: 1 }),
+      row({ destination: "100.64.0.1:80", up: 2 }),
+      row({ destination: "100.64.0.2:80", outboundType: "tailscale", up: 4 }),
+      row({ destination: "[fd7a:115c:a1e0:0:0:0:0:2]:80", up: 8 }),
+      row({ inboundType: "tailscale", destination: "1.1.1.1:443", up: 16 }),
+      row({ destination: "100.64.0.99:80", up: 32 }),
+    ];
+    const model = buildTopology(inputs, {}, endpoints);
+    expect(model.columns.destination.map(({ destinationKind, conns, up }) => ({ destinationKind, conns, up }))).toEqual([
+      { destinationKind: "local", conns: 2, up: 3 },
+      { destinationKind: "tailscale", conns: 2, up: 12 },
+      { destinationKind: "internet", conns: 1, up: 16 },
+      { destinationKind: "unknown", conns: 1, up: 32 },
+    ]);
+    expect(connectionsThrough(model, "destination:local").map(({ row }) => row)).toEqual(inputs.slice(0, 2));
+    expect(model.totals).toEqual({ conns: 6, up: 63, down: 0 });
+  });
+
+  it("does not label a proxy's loopback destination as this machine", () => {
+    const model = buildTopology([row({ destination: "127.0.0.1:80", outboundType: "socks" })]);
+    expect(model.columns.destination[0].destinationKind).toBe("unknown");
+  });
+
+  it("stops DNS and blocked traffic at their exits", () => {
+    const model = buildTopology([row({ outboundType: "dns" }), row({ outboundType: "block" })]);
+    expect(model.columns.destination).toEqual([]);
+    expect(model.paths.every((path) => path.nodes.at(-1)?.startsWith("x:"))).toBe(true);
   });
 });

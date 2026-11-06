@@ -559,7 +559,7 @@ const COLUMN_LABELS: Record<TopologyColumn, MessageKey> = {
   inbound: "Inbound",
   group: "Groups",
   exit: "Exits",
-  internet: "Upstream",
+  destination: "Destinations",
 };
 
 function connectionsFilter(node: TopologyNode): string {
@@ -603,15 +603,17 @@ function TopologyCard() {
   const [selected, setSelected] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
+  const endpoints = useStream(api.tailscale).data.endpoints;
   const rows = connections.data.rows;
-  const [built, setBuilt] = useState<{ rows: typeof rows | null; model: TopologyModel }>({
+  const [built, setBuilt] = useState<{ rows: typeof rows | null; endpoints: typeof endpoints | null; model: TopologyModel }>({
     rows: null,
+    endpoints: null,
     model: EMPTY_TOPOLOGY,
   });
   let model = built.model;
-  if (built.rows !== rows) {
-    model = buildTopology(rows.values(), built.model.order);
-    setBuilt({ rows, model });
+  if (built.rows !== rows || built.endpoints !== endpoints) {
+    model = buildTopology(rows.values(), built.model.order, endpoints);
+    setBuilt({ rows, endpoints, model });
   }
 
   const totals = model.totals;

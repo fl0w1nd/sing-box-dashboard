@@ -21,8 +21,14 @@ export function useTopologyLabel(): (node: TopologyNode) => string {
       if (node.members) {
         return t("{count} more", { count: node.members.length });
       }
-      if (node.column === "internet") {
-        return t("Internet");
+      if (node.column === "destination") {
+        switch (node.destinationKind) {
+          case "local": return t("Localhost");
+          case "lan": return t("Local network");
+          case "tailscale": return t("Tailscale network");
+          case "internet": return t("Internet");
+          default: return t("Unclassified");
+        }
       }
       if (node.kind === "local") {
         return t("Localhost");
@@ -48,6 +54,14 @@ function topologyIcon(node: TopologyNode): IconName {
           return "cpu";
         default:
           return "computer";
+      }
+    case "destination":
+      switch (node.destinationKind) {
+        case "local": return "computer";
+        case "lan": return "router";
+        case "tailscale": return "waypoints";
+        case "internet": return "dns";
+        default: return "info";
       }
     case "inbound":
       return "download";
@@ -248,7 +262,7 @@ export function Topology(props: {
       <div className={styles.column}>
         <div className={styles.columnTitle}>
           <span>{title}</span>
-          {model.columns[column].length > 0 && column !== "internet" && (
+          {model.columns[column].length > 0 && (
             <span className={styles.columnCount}>{model.columns[column].length}</span>
           )}
         </div>
@@ -308,7 +322,7 @@ export function Topology(props: {
               {renderColumn("exit", t("Exits"))}
             </div>
           </div>
-          {renderColumn("internet", t("Upstream"))}
+          {renderColumn("destination", t("Destinations"))}
         </div>
       </div>
     </div>
