@@ -141,9 +141,7 @@ message DNSQueryLogRule {
   string rule = 2;
   string action = 3;
   string actionType = 4;
-  // The rule matches without a domain, IP CIDR or rule-set condition, such
-  // as by query type alone, so it applies to every domain.
-  bool policy = 5;
+  reserved 5;
 }
 
 message DNSQueryLogUpstream {
@@ -185,7 +183,7 @@ message DNSQueryLogStats {
   // Reverse lookups, of domains under in-addr.arpa or ip6.arpa, are left out
   // and counted in reverseQueries.
   repeated DNSQueryLogStatsCount topDomains = 5;
-  // Domains of blocked entries.
+  // Domains of the entries answered by a reject rule.
   repeated DNSQueryLogStatsCount topBlockedDomains = 6;
   // Source addresses without the port; entries without a source, such as
   // background refreshes, are left out.
@@ -204,17 +202,10 @@ message DNSQueryLogStats {
   // itself. Reverse lookups are left out and counted in
   // internalReverseQueries.
   repeated DNSQueryLogStatsCount topInternalDomains = 13;
-  // Reject and predefined rules by the queries they answered, of every
-  // kind.
-  repeated DNSQueryLogStatsRule topRules = 14;
-  // Entries answered by a reject or predefined rule, by the kind of the
-  // rule: block, a rule with a domain, IP CIDR or rule-set condition that
-  // rejected or answered without records; policy, a rule without such a
-  // condition, such as one answering every AAAA query; rewrite, a
-  // predefined rule answering with records, like hosts.
-  int64 blocked = 15;
-  int64 policy = 16;
-  int64 rewritten = 17;
+  // Reject rules by the queries they answered. Predefined answers are not
+  // blocks; they count only by status.
+  repeated DNSQueryLogStatsRule topBlockedRules = 14;
+  reserved 15 to 17;
   // Exchanges, and lookups and background queries, of domains under
   // in-addr.arpa or ip6.arpa.
   int64 reverseQueries = 18;
@@ -227,9 +218,7 @@ message DNSQueryLogStatsRule {
   int32 index = 1;
   string rule = 2;
   string action = 3;
-  string actionType = 4;
-  // block, policy or rewrite, as of the newest entry.
-  string kind = 5;
+  reserved 4, 5;
   int64 count = 6;
 }
 
@@ -238,9 +227,7 @@ message DNSQueryLogStatsBucket {
   int64 time = 1;
   int64 total = 2;
   map<string, int64> statuses = 3;
-  int64 blocked = 4;
-  int64 policy = 5;
-  int64 rewritten = 6;
+  reserved 4 to 6;
 }
 
 message DNSQueryLogStatsCount {

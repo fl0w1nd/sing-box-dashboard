@@ -656,9 +656,8 @@ function DnsSummaryPanel(props: { span: 6 | 12 }) {
   const [flushing, setFlushing] = useState(false);
 
   const total = Number(stats?.total ?? 0);
-  // Policy rules, such as one answering every AAAA query, and rewrites are
-  // not blocks.
-  const blocked = Number(stats?.blocked ?? 0n);
+  // Only reject rules block; predefined answers count by status alone.
+  const blocked = Number(stats?.statuses.rejected ?? 0n);
   const cached = Number(stats?.statuses.cached ?? 0n) + Number(stats?.statuses.optimistic ?? 0n);
   const buckets = stats?.buckets ?? [];
   const bucketMax = Math.max(...buckets.map((bucket) => Number(bucket.total)), 1);
@@ -737,7 +736,7 @@ function DnsSummaryPanel(props: { span: 6 | 12 }) {
       >
         {buckets.map((bucket, index) => {
           const value = Number(bucket.total);
-          const bucketBlocked = Number(bucket.blocked);
+          const bucketBlocked = Number(bucket.statuses.rejected ?? 0n);
           return (
             <span
               key={String(bucket.time)}
@@ -756,7 +755,7 @@ function DnsSummaryPanel(props: { span: 6 | 12 }) {
             <div className="tooltip-rows">
               <span>{t("Blocked")}</span>
               <span>
-                {Number(hovered.blocked).toLocaleString()}
+                {Number(hovered.statuses.rejected ?? 0n).toLocaleString()}
               </span>
             </div>
             <div className="tooltip-meta">

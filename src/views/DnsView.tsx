@@ -32,7 +32,6 @@ import type {
   DNSQueryLogEntry,
   DNSQueryLogStats,
   DNSQueryLogStatsCount,
-  DNSQueryLogStatsRule,
 } from "../gen/daemon/extended_service_pb";
 import { cx } from "../lib/cx";
 import styles from "./DnsView.module.css";
@@ -301,7 +300,7 @@ function DnsContent(props: { storage: string }) {
         <BlockedPanel
           stats={stats}
           onPickDomain={(key) => focusSearch(key)}
-          onPickRule={(status) => focusSearch("", status)}
+          onPickRule={() => focusSearch("", "rejected")}
         />
         <TopPanel
           icon="computer"
@@ -339,9 +338,8 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
   const { t } = useI18n();
   const stats = props.stats;
   const total = Number(stats?.total ?? 0);
-  // Policy rules, such as one answering every AAAA query, and rewrites are
-  // not blocks.
-  const blocked = Number(stats?.blocked ?? 0n);
+  // Only reject rules block; predefined answers count by status alone.
+  const blocked = sumStatuses(stats?.statuses, ["rejected"]);
   const cached = sumStatuses(stats?.statuses, CACHED);
   const failed = sumStatuses(stats?.statuses, ["error"]);
   const buckets = stats?.buckets ?? [];
@@ -372,14 +370,6 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
             {t("Blocked")}
           </div>
           <Metric value={stats ? blocked.toLocaleString() : "—"} unit={percent(blocked)} size="medium" />
-          {stats && (stats.policy > 0n || stats.rewritten > 0n) && (
-            <div className="metric-foot">
-              {t("Policy {policy} · rewritten {rewritten}", {
-                policy: Number(stats.policy).toLocaleString(),
-                rewritten: Number(stats.rewritten).toLocaleString(),
-              })}
-            </div>
-          )}
         
         </div>
         <div className={styles.summaryMetric}>
@@ -418,7 +408,7 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
         {buckets.map((bucket, index) => {
           const value = Number(bucket.total);
           const parts = [
-            { className: styles.barBlocked, value: Number(bucket.blocked) },
+            { className: styles.barBlocked, value: sumStatuses(bucket.statuses, ["rejected"]) },
             { className: styles.barError, value: sumStatuses(bucket.statuses, ["error"]) },
             { className: styles.barCached, value: sumStatuses(bucket.statuses, CACHED) },
           ];
@@ -448,7 +438,7 @@ function SummaryPanel(props: { stats: DNSQueryLogStats | null }) {
               <span>{t("From cache")}</span>
               <span>{sumStatuses(hovered.statuses, CACHED).toLocaleString()}</span>
               <span>{t("Blocked")}</span>
-              <span>{Number(hovered.blocked).toLocaleString()}</span>
+              <span>{sumStatuses(hovered.statuses, ["rejected"]).toLocaleString()}</span>
               <span>{t("Failed")}</span>
               <span>{sumStatuses(hovered.statuses, ["error"]).toLocaleString()}</span>
             </div>
@@ -489,7 +479,6 @@ interface TopItem {
   label: ReactNode;
   title: string;
   count: number;
-  tag?: ReactNode;
   onPick: () => void;
 }
 
@@ -516,10 +505,7 @@ function TopList(props: { items: TopItem[]; tone?: "accent"; empty?: string }) {
           <button type="button" className={styles.topRow} onClick={item.onPick} title={item.title}>
             <span className={styles.topRank}>{item.rank ?? String(index + 1).padStart(2, "0")}</span>
             <span className={styles.topBody}>
-              <span className={styles.topKey}>
-                {item.tag}
-                {item.label}
-              </span>
+              <span className={styles.topKey}>{item.label}</span>
               <span className={styles.topTrack}>
                 <span
                   className={cx(styles.topFill, props.tone === "accent" && styles.topFillAccent)}
@@ -594,33 +580,16 @@ function DomainsPanel(props: { stats: DNSQueryLogStats | null; onPick: (key: str
 
 type BlockedView = "domains" | "rules";
 
-function ruleStatus(rule: DNSQueryLogStatsRule): string {
-  return rule.actionType === "reject" ? "rejected" : "predefined";
-}
-
-function ruleKindTag(kind: string, t: Translate): ReactNode {
-  switch (kind) {
-    case "policy":
-      return <span className={styles.ruleTag}>{t("policy")}</span>;
-    case "rewrite":
-      return <span className={styles.ruleTag}>{t("rewrite")}</span>;
-    default:
-      return undefined;
-  }
-}
-
-// Domains blocked by rules that name them, and the rules that answered
-// queries themselves: a policy rule, such as one answering every AAAA query,
-// is one row there rather than every domain in the domain ranking.
+// The domains answered by reject rules, and those rules. Predefined answers,
+// such as hosts, are not blocks.
 function BlockedPanel(props: {
   stats: DNSQueryLogStats | null;
   onPickDomain: (key: string) => void;
-  onPickRule: (status: string) => void;
+  onPickRule: () => void;
 }) {
   const { t } = useI18n();
   const [view, setView] = useState<BlockedView>("domains");
-  const rules = props.stats?.topRules ?? [];
-  const otherCount = Number((props.stats?.policy ?? 0n) + (props.stats?.rewritten ?? 0n));
+  const rules = props.stats?.topBlockedRules ?? [];
   const byRule = view === "rules";
   const items: TopItem[] = byRule
     ? rules.map((rule) => ({
@@ -634,8 +603,7 @@ function BlockedPanel(props: {
         ),
         title: `#${rule.index} ${rule.rule} → ${rule.action}`,
         count: Number(rule.count),
-        tag: ruleKindTag(rule.kind, t),
-        onPick: () => props.onPickRule(ruleStatus(rule)),
+        onPick: props.onPickRule,
       }))
     : countItems(props.stats?.topBlockedDomains ?? [], props.onPickDomain);
   return (
@@ -655,14 +623,6 @@ function BlockedPanel(props: {
           value={view}
           onChange={setView}
         />
-      }
-      footer={
-        !byRule &&
-        otherCount > 0 && (
-          <button type="button" className={styles.topFoot} onClick={() => setView("rules")}>
-            {t("{count} more answered by policy or rewrite rules", { count: otherCount.toLocaleString() })}
-          </button>
-        )
       }
     />
   );
@@ -1037,7 +997,6 @@ function EntryDetail(props: { entry: DNSQueryLogEntry; onClose: () => void }) {
               <span className={styles.ruleText}>
                 <span className="mono">{rule.rule}</span>
                 <span className="faint"> → {rule.action}</span>
-                {rule.policy && <span className={styles.method}>{t("policy")}</span>}
               </span>
             </div>
           ))}
